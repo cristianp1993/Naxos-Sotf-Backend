@@ -1,30 +1,34 @@
 const express = require('express');
 const router = express.Router();
-const ProductsController = require('../controllers/productsController');
-const { authenticateToken, requireManagerOrAdmin } = require('../middleware/auth');
+const { authenticateToken } = require('../middleware/auth');
+const {
+  getAllProducts,
+  getProductById,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  getCategories
+} = require('../controllers/productsController');
 
-// Todas las rutas requieren autenticación
+// Rutas públicas para obtener datos (sin autenticación)
+router.get('/categories', getCategories);
+
+// Rutas protegidas (requieren autenticación)
 router.use(authenticateToken);
 
-// Categorías
-router.get('/categories', ProductsController.getCategories);
-router.post('/categories', requireManagerOrAdmin, ProductsController.createCategory);
+// Obtener todos los productos
+router.get('/', getAllProducts);
 
-// Productos
-router.get('/', ProductsController.getProducts);
-router.post('/', requireManagerOrAdmin, ProductsController.createProduct);
-router.get('/:id', ProductsController.getProductById);
+// Obtener producto por ID
+router.get('/:id', getProductById);
 
-// Variantes
-router.post('/variants', requireManagerOrAdmin, ProductsController.createVariant);
-router.get('/:productId/variants', ProductsController.getProductVariants);
+// Crear nuevo producto
+router.post('/', createProduct);
 
-// Precios
-router.post('/prices', requireManagerOrAdmin, ProductsController.createPrice);
-router.get('/prices/:variantId/current', ProductsController.getCurrentPrice);
+// Actualizar producto
+router.put('/:id', updateProduct);
 
-// Sabores
-router.get('/flavors', ProductsController.getFlavors);
-router.post('/flavors', requireManagerOrAdmin, ProductsController.createFlavor);
+// Eliminar producto
+router.delete('/:id', deleteProduct);
 
 module.exports = router;

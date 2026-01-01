@@ -6,18 +6,14 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-const { testConnection } = require('./config/database');
+// Importar rutas desde el archivo central
+const routes = require('./routes');
 
-// Importar rutas
-const authRoutes = require('./routes/auth');
-const productsRoutes = require('./routes/products');
-const inventoryRoutes = require('./routes/inventory');
-const salesRoutes = require('./routes/sales');
-const shiftsRoutes = require('./routes/shifts');
-const reportsRoutes = require('./routes/reports');
+// Importar controlador de menú para ruta pública
+const MenuController = require('./controllers/menuController');
 
-// Importar controlador de productos para ruta pública
-const ProductsController = require('./controllers/productsController');
+// Importar configuración de base de datos Sequelize
+const { testConnection, syncModels } = require('./config/database-sequelize');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -65,7 +61,7 @@ app.get('/health', (req, res) => {
 // Ruta raíz
 app.get('/', (req, res) => {
   res.json({
-    message: 'Bienvenido al Sistema POS Naxos - Backend API',
+    message: 'Bienvenido a Naxos - Backend API',
     version: '1.0.0',
     documentation: '/api/docs',
     endpoints: {
@@ -75,23 +71,33 @@ app.get('/', (req, res) => {
       sales: '/api/sales',
       shifts: '/api/shifts',
       reports: '/api/reports',
-      public: {
-        menu: '/api/public/menu'
-      }
+      // Nuevas rutas reestructuradas
+      categories: '/api/categories',
+      variants: '/api/variants',
+      prices: '/api/prices',
+      flavors: '/api/flavors',
+      menu: '/api/menu'
     }
   });
 });
 
-// Rutas públicas (sin autenticación)
-app.get('/api/public/menu', ProductsController.getPublicMenu);
+// Rutas de la API - usando el archivo central de rutas
+app.use('/api/auth', routes.auth);
+app.use('/api/products', routes.products);
+app.use('/api/inventory', routes.inventory);
+app.use('/api/sales', routes.sales);
+app.use('/api/shifts', routes.shifts);
+app.use('/api/reports', routes.reports);
 
-// Rutas de la API
-app.use('/api/auth', authRoutes);
-app.use('/api/products', productsRoutes);
-app.use('/api/inventory', inventoryRoutes);
-app.use('/api/sales', salesRoutes);
-app.use('/api/shifts', shiftsRoutes);
-app.use('/api/reports', reportsRoutes);
+// Nuevas rutas reestructuradas con Sequelize
+app.use('/api/categories', routes.categories);
+app.use('/api/variants', routes.variants);
+app.use('/api/prices', routes.prices);
+app.use('/api/flavors', routes.flavors);
+app.use('/api/menu', routes.menu);
+
+// Rutas de product flavors (debe estar en /api porque ya incluye /products en las rutas)
+app.use('/api', routes.productFlavors);
 
 // Middleware para rutas no encontradas
 app.use('*', (req, res) => {
@@ -138,12 +144,21 @@ const startServer = async () => {
       process.exit(1);
     }
     
+    // Sincronizar modelos con la base de datos
+    console.log('🔄 Sincronizando modelos con la base de datos...');
+    const modelsSynced = await syncModels();
+    if (!modelsSynced) {
+      console.error('❌ No se pudieron sincronizar los modelos');
+      process.exit(1);
+    }
+    
     // Iniciar servidor
     app.listen(PORT, () => {
       console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
       console.log(`📊 Entorno: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🌐 URL: http://localhost:${PORT}`);
       console.log(`📚 API Docs: http://localhost:${PORT}/api/docs`);
+      console.log(`🍹 Menú público: http://localhost:${PORT}/api/menu/public`);
     });
   } catch (error) {
     console.error('❌ Error iniciando el servidor:', error);

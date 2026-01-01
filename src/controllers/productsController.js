@@ -1,564 +1,366 @@
-const { query } = require('../config/database');
-const Joi = require('joi');
+const { Product, Category, Flavor, ProductFlavor } = require('../models');
 
-// Esquemas de validación
-const categorySchema = Joi.object({
-  name: Joi.string().min(2).max(100).required()
-});
+// ==================== PRODUCTOS ====================
 
-const productSchema = Joi.object({
-  category_id: Joi.number().integer().positive().required(),
-  name: Joi.string().min(2).max(200).required(),
-  description: Joi.string().max(500).optional(),
-  image_url: Joi.string().uri().optional(),
-  is_active: Joi.boolean().default(true)
-});
+// Obtener todos los productos con información de categoría
+const getAllProducts = async (req, res) => {
+  try {
+    console.log('🔍 Ejecutando getAllProducts...');
+    const products = await Product.findAll({
+      include: [{
+        model: Category,
+        as: 'category',
+        attributes: ['category_id', 'name']
+      }],
+      order: [['product_id', 'ASC']]
+    });
+    console.log('📦 Productos encontrados:', products.length);
+    console.log('📦 Productos data:', JSON.stringify(products, null, 2));
+    res.json({ success: true, data: products });
+  } catch (error) {
+    console.error('❌ Error al obtener productos:', error);
+    console.error('❌ Error stack:', error.stack);
+    res.status(500).json({ success: false, message: 'Error al obtener productos' });
+  }
+};
 
-const variantSchema = Joi.object({
-  product_id: Joi.number().integer().positive().required(),
-  variant_name: Joi.string().min(1).max(100).required(),
-  ounces: Joi.number().integer().positive().optional(),
-  sku: Joi.string().max(50).optional(),
-  image_url: Joi.string().uri().optional(),
-  is_active: Joi.boolean().default(true)
-});
+// Obtener producto por ID
+const getProductById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const product = await Product.findByPk(id, {
+      include: [{
+        model: Category,
+        as: 'category',
+        attributes: ['category_id', 'name']
+      }]
+    });
+    
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+    }
+    
+    res.json({ success: true, data: product });
+  } catch (error) {
+    console.error('Error al obtener producto:', error);
+    res.status(500).json({ success: false, message: 'Error al obtener producto' });
+  }
+};
 
-const priceSchema = Joi.object({
-  variant_id: Joi.number().integer().positive().required(),
-  price: Joi.number().precision(2).positive().required(),
-  valid_from: Joi.date().default('now'),
-  valid_to: Joi.date().optional()
-});
-
-const flavorSchema = Joi.object({
-  name: Joi.string().min(2).max(100).required()
-});
-
-class ProductsController {
-  
-  // ==================== CATEGORÍAS ====================
-  
-  // Crear categoría
-  static async createCategory(req, res) {
-    try {
-      const { error, value } = categorySchema.validate(req.body);
-      if (error) {
-        return res.status(400).json({
-          error: 'Datos de entrada inválidos',
-          message: error.details[0].message
-        });
-      }
-
-      const { name } = value;
-
-      const result = await query(
-        'INSERT INTO naxos.product_category (name) VALUES ($1) RETURNING *',
-        [name]
-      );
-
-      res.status(201).json({
-        message: 'Categoría creada exitosamente',
-        category: result.rows[0]
-      });
-
-    } catch (error) {
-      console.error('Error creando categoría:', error);
-      if (error.code === '23505') { // Unique violation
-        return res.status(409).json({
-          error: 'Categoría ya existe',
-          message: 'Ya existe una categoría con ese nombre'
-        });
-      }
-      res.status(500).json({
-        error: 'Error interno del servidor',
-        message: 'No se pudo crear la categoría'
+// Crear nuevo producto
+const createProduct = async (req, res) => {
+  try {
+    const { category_id, name, description, image_url } = req.body;
+    
+    // Validaciones
+    if (!category_id || !name) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'La categoría y el nombre son obligatorios' 
       });
     }
-  }
-
-  // Obtener todas las categorías
-  static async getCategories(req, res) {
-    try {
-      const result = await query(
-        'SELECT * FROM naxos.product_category ORDER BY name ASC'
-      );
-
-      res.status(200).json({
-        message: 'Categorías obtenidas exitosamente',
-        categories: result.rows
-      });
-
-    } catch (error) {
-      console.error('Error obteniendo categorías:', error);
-      res.status(500).json({
-        error: 'Error interno del servidor',
-        message: 'No se pudieron obtener las categorías'
+    
+    // Verificar que la categoría existe
+    const category = await Category.findByPk(category_id);
+    if (!category) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'La categoría especificada no existe' 
       });
     }
-  }
-
-  // ==================== PRODUCTOS ====================
-  
-  // Crear producto
-  static async createProduct(req, res) {
-    try {
-      const { error, value } = productSchema.validate(req.body);
-      if (error) {
-        return res.status(400).json({
-          error: 'Datos de entrada inválidos',
-          message: error.details[0].message
-        });
-      }
-
-      const { category_id, name, description, image_url, is_active } = value;
-
-      const result = await query(
-        'INSERT INTO naxos.product (category_id, name, description, image_url, is_active) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-        [category_id, name, description, image_url, is_active]
-      );
-
-      res.status(201).json({
-        message: 'Producto creado exitosamente',
-        product: result.rows[0]
-      });
-
-    } catch (error) {
-      console.error('Error creando producto:', error);
-      res.status(500).json({
-        error: 'Error interno del servidor',
-        message: 'No se pudo crear el producto'
+    
+    const newProduct = await Product.create({
+      category_id,
+      name,
+      description: description || null,
+      image_url: image_url || null,
+      is_active: true
+    });
+    
+    // Obtener el producto con la información de la categoría
+    const productWithCategory = await Product.findByPk(newProduct.product_id, {
+      include: [{
+        model: Category,
+        as: 'category',
+        attributes: ['category_id', 'name']
+      }]
+    });
+    
+    res.status(201).json({ 
+      success: true, 
+      message: 'Producto creado exitosamente', 
+      data: productWithCategory 
+    });
+  } catch (error) {
+    console.error('Error al crear producto:', error);
+    if (error.name === 'SequelizeValidationError') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Error de validación', 
+        errors: error.errors.map(e => e.message) 
       });
     }
+    res.status(500).json({ success: false, message: 'Error al crear producto' });
   }
+};
 
-  // Obtener todos los productos con sus categorías y variantes
-  static async getProducts(req, res) {
-    try {
-      const { category_id, is_active } = req.query;
-      
-      let whereClause = '';
-      let params = [];
-      let paramCount = 0;
-
-      if (category_id) {
-        paramCount++;
-        whereClause += `WHERE p.category_id = $${paramCount}`;
-        params.push(parseInt(category_id));
-      }
-
-      if (is_active !== undefined) {
-        paramCount++;
-        whereClause += (whereClause ? ' AND ' : 'WHERE ') + `p.is_active = $${paramCount}`;
-        params.push(is_active === 'true');
-      }
-
-      const result = await query(`
-        SELECT 
-          p.product_id,
-          p.name as product_name,
-          p.description,
-          p.image_url,
-          p.is_active,
-          c.category_id,
-          c.name as category_name,
-          json_agg(
-            json_build_object(
-              'variant_id', pv.variant_id,
-              'variant_name', pv.variant_name,
-              'ounces', pv.ounces,
-              'sku', pv.sku,
-              'image_url', pv.image_url,
-              'is_active', pv.is_active
-            )
-          ) FILTER (WHERE pv.variant_id IS NOT NULL) as variants
-        FROM naxos.product p
-        LEFT JOIN naxos.product_category c ON p.category_id = c.category_id
-        LEFT JOIN naxos.product_variant pv ON p.product_id = pv.product_id
-        ${whereClause}
-        GROUP BY p.product_id, c.category_id, c.name
-        ORDER BY p.name ASC
-      `, params);
-
-      res.status(200).json({
-        message: 'Productos obtenidos exitosamente',
-        products: result.rows
-      });
-
-    } catch (error) {
-      console.error('Error obteniendo productos:', error);
-      res.status(500).json({
-        error: 'Error interno del servidor',
-        message: 'No se pudieron obtener los productos'
+// Actualizar producto
+const updateProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { category_id, name, description, image_url, is_active } = req.body;
+    
+    // Verificar que el producto existe
+    const product = await Product.findByPk(id);
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+    }
+    
+    // Validaciones
+    if (!category_id || !name) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'La categoría y el nombre son obligatorios' 
       });
     }
-  }
-
-  // Obtener producto por ID
-  static async getProductById(req, res) {
-    try {
-      const productId = parseInt(req.params.id);
-
-      const result = await query(`
-        SELECT 
-          p.product_id,
-          p.name as product_name,
-          p.description,
-          p.image_url,
-          p.is_active,
-          c.category_id,
-          c.name as category_name,
-          json_agg(
-            json_build_object(
-              'variant_id', pv.variant_id,
-              'variant_name', pv.variant_name,
-              'ounces', pv.ounces,
-              'sku', pv.sku,
-              'image_url', pv.image_url,
-              'is_active', pv.is_active,
-              'current_price', (
-                SELECT vp.price 
-                FROM naxos.variant_price vp 
-                WHERE vp.variant_id = pv.variant_id 
-                AND vp.valid_from <= now() 
-                AND (vp.valid_to IS NULL OR vp.valid_to > now())
-                ORDER BY vp.valid_from DESC 
-                LIMIT 1
-              )
-            )
-          ) FILTER (WHERE pv.variant_id IS NOT NULL) as variants
-        FROM naxos.product p
-        LEFT JOIN naxos.product_category c ON p.category_id = c.category_id
-        LEFT JOIN naxos.product_variant pv ON p.product_id = pv.product_id
-        WHERE p.product_id = $1
-        GROUP BY p.product_id, c.category_id, c.name
-      `, [productId]);
-
-      if (result.rows.length === 0) {
-        return res.status(404).json({
-          error: 'Producto no encontrado',
-          message: 'El producto especificado no existe'
-        });
-      }
-
-      res.status(200).json({
-        message: 'Producto obtenido exitosamente',
-        product: result.rows[0]
-      });
-
-    } catch (error) {
-      console.error('Error obteniendo producto:', error);
-      res.status(500).json({
-        error: 'Error interno del servidor',
-        message: 'No se pudo obtener el producto'
+    
+    // Verificar que la categoría existe
+    const category = await Category.findByPk(category_id);
+    if (!category) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'La categoría especificada no existe' 
       });
     }
-  }
-
-  // ==================== VARIANTES ====================
-  
-  // Crear variante de producto
-  static async createVariant(req, res) {
-    try {
-      const { error, value } = variantSchema.validate(req.body);
-      if (error) {
-        return res.status(400).json({
-          error: 'Datos de entrada inválidos',
-          message: error.details[0].message
-        });
-      }
-
-      const { product_id, variant_name, ounces, sku, image_url, is_active } = value;
-
-      const result = await query(
-        'INSERT INTO naxos.product_variant (product_id, variant_name, ounces, sku, image_url, is_active) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-        [product_id, variant_name, ounces, sku, image_url, is_active]
-      );
-
-      res.status(201).json({
-        message: 'Variante creada exitosamente',
-        variant: result.rows[0]
-      });
-
-    } catch (error) {
-      console.error('Error creando variante:', error);
-      if (error.code === '23505') { // Unique violation
-        return res.status(409).json({
-          error: 'Variante ya existe',
-          message: 'Ya existe una variante con ese nombre para este producto'
-        });
-      }
-      res.status(500).json({
-        error: 'Error interno del servidor',
-        message: 'No se pudo crear la variante'
+    
+    // Actualizar producto
+    await product.update({
+      category_id,
+      name,
+      description: description || null,
+      image_url: image_url || null,
+      is_active: is_active !== undefined ? is_active : product.is_active
+    });
+    
+    // Obtener el producto actualizado con la información de la categoría
+    const updatedProduct = await Product.findByPk(id, {
+      include: [{
+        model: Category,
+        as: 'category',
+        attributes: ['category_id', 'name']
+      }]
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Producto actualizado exitosamente', 
+      data: updatedProduct 
+    });
+  } catch (error) {
+    console.error('Error al actualizar producto:', error);
+    if (error.name === 'SequelizeValidationError') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Error de validación', 
+        errors: error.errors.map(e => e.message) 
       });
     }
+    res.status(500).json({ success: false, message: 'Error al actualizar producto' });
   }
+};
 
-  // Obtener variantes de un producto
-  static async getProductVariants(req, res) {
-    try {
-      const productId = parseInt(req.params.productId);
+// Eliminar producto
+const deleteProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Verificar que el producto existe
+    const product = await Product.findByPk(id);
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+    }
+    
+    await product.destroy();
+    
+    res.json({ success: true, message: 'Producto eliminado exitosamente' });
+  } catch (error) {
+    console.error('Error al eliminar producto:', error);
+    res.status(500).json({ success: false, message: 'Error al eliminar producto' });
+  }
+};
 
-      const result = await query(`
-        SELECT 
-          pv.*,
-          p.name as product_name,
-          json_agg(
-            json_build_object(
-              'price_id', vp.price_id,
-              'price', vp.price,
-              'valid_from', vp.valid_from,
-              'valid_to', vp.valid_to
-            )
-          ) FILTER (WHERE vp.price_id IS NOT NULL) as prices
-        FROM naxos.product_variant pv
-        LEFT JOIN naxos.product p ON pv.product_id = p.product_id
-        LEFT JOIN naxos.variant_price vp ON pv.variant_id = vp.variant_id
-        WHERE pv.product_id = $1
-        GROUP BY pv.variant_id, p.name
-        ORDER BY pv.variant_name ASC
-      `, [productId]);
+// Obtener categorías para el selector
+const getCategories = async (req, res) => {
+  try {
+    console.log('🔍 Ejecutando getCategories...');
+    const categories = await Category.findAll({
+      order: [['name', 'ASC']]
+    });
+    console.log('📂 Categorías encontradas:', categories.length);
+    console.log('📂 Categorías data:', JSON.stringify(categories, null, 2));
+    res.json({ success: true, data: categories });
+  } catch (error) {
+    console.error('❌ Error al obtener categorías:', error);
+    console.error('❌ Error stack:', error.stack);
+    res.status(500).json({ success: false, message: 'Error al obtener categorías' });
+  }
+};
 
-      res.status(200).json({
-        message: 'Variantes obtenidas exitosamente',
-        variants: result.rows
-      });
+// ==================== PRODUCT_FLAVORS ====================
 
-    } catch (error) {
-      console.error('Error obteniendo variantes:', error);
-      res.status(500).json({
-        error: 'Error interno del servidor',
-        message: 'No se pudieron obtener las variantes'
+// Obtener sabores de un producto
+const getProductFlavors = async (req, res) => {
+  try {
+    const { productId } = req.params;
+
+    // Verificar que el producto existe
+    const product = await Product.findByPk(productId);
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Producto no encontrado'
       });
     }
-  }
 
-  // ==================== PRECIOS ====================
-  
-  // Crear precio para variante
-  static async createPrice(req, res) {
-    try {
-      const { error, value } = priceSchema.validate(req.body);
-      if (error) {
-        return res.status(400).json({
-          error: 'Datos de entrada inválidos',
-          message: error.details[0].message
-        });
+    // Obtener sabores asociados al producto
+    const productFlavors = await ProductFlavor.findAll({
+      where: { 
+        product_id: productId,
+        is_active: true 
+      },
+      include: [{
+        model: Flavor,
+        as: 'flavor',
+        attributes: ['flavor_id', 'name']
+      }],
+      order: [[{ model: Flavor, as: 'flavor' }, 'name', 'ASC']]
+    });
+
+    const flavors = productFlavors.map(pf => pf.flavor);
+
+    res.status(200).json({
+      success: true,
+      message: 'Sabores del producto obtenidos exitosamente',
+      flavors: flavors
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo sabores del producto:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener sabores del producto'
+    });
+  }
+};
+
+// Asociar sabores a un producto
+const associateFlavorsToProduct = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { flavor_ids } = req.body;
+
+    // Validar que flavor_ids sea un array
+    if (!Array.isArray(flavor_ids)) {
+      return res.status(400).json({
+        success: false,
+        message: 'flavor_ids debe ser un array'
+      });
+    }
+
+    // Verificar que el producto existe
+    const product = await Product.findByPk(productId);
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Producto no encontrado'
+      });
+    }
+
+    // Verificar que todos los sabores existen
+    const flavors = await Flavor.findAll({
+      where: { flavor_id: flavor_ids }
+    });
+
+    if (flavors.length !== flavor_ids.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Algunos sabores no existen'
+      });
+    }
+
+    // Eliminar asociaciones existentes
+    await ProductFlavor.destroy({
+      where: { product_id: productId }
+    });
+
+    // Crear nuevas asociaciones
+    const associations = flavor_ids.map(flavorId => ({
+      product_id: productId,
+      flavor_id: flavorId,
+      is_active: true
+    }));
+
+    await ProductFlavor.bulkCreate(associations);
+
+    res.status(200).json({
+      success: true,
+      message: 'Sabores asociados al producto exitosamente'
+    });
+
+  } catch (error) {
+    console.error('Error asociando sabores al producto:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al asociar sabores al producto'
+    });
+  }
+};
+
+// Remover sabor de un producto
+const removeFlavorFromProduct = async (req, res) => {
+  try {
+    const { productId, flavorId } = req.params;
+
+    // Verificar que la asociación existe
+    const productFlavor = await ProductFlavor.findOne({
+      where: {
+        product_id: productId,
+        flavor_id: flavorId
       }
+    });
 
-      const { variant_id, price, valid_from, valid_to } = value;
-
-      // Verificar que la variante existe
-      const variantExists = await query(
-        'SELECT variant_id FROM naxos.product_variant WHERE variant_id = $1',
-        [variant_id]
-      );
-
-      if (variantExists.rows.length === 0) {
-        return res.status(404).json({
-          error: 'Variante no encontrada',
-          message: 'La variante especificada no existe'
-        });
-      }
-
-      const result = await query(
-        'INSERT INTO naxos.variant_price (variant_id, price, valid_from, valid_to) VALUES ($1, $2, $3, $4) RETURNING *',
-        [variant_id, price, valid_from, valid_to]
-      );
-
-      res.status(201).json({
-        message: 'Precio creado exitosamente',
-        price: result.rows[0]
-      });
-
-    } catch (error) {
-      console.error('Error creando precio:', error);
-      res.status(500).json({
-        error: 'Error interno del servidor',
-        message: 'No se pudo crear el precio'
+    if (!productFlavor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Asociación sabor-producto no encontrada'
       });
     }
+
+    // Eliminar la asociación
+    await productFlavor.destroy();
+
+    res.status(200).json({
+      success: true,
+      message: 'Sabor removido del producto exitosamente'
+    });
+
+  } catch (error) {
+    console.error('Error removiendo sabor del producto:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al remover sabor del producto'
+    });
   }
+};
 
-  // Obtener precio actual de una variante
-  static async getCurrentPrice(req, res) {
-    try {
-      const variantId = parseInt(req.params.variantId);
-
-      const result = await query(`
-        SELECT 
-          vp.price_id,
-          vp.variant_id,
-          vp.price,
-          vp.valid_from,
-          vp.valid_to,
-          pv.variant_name,
-          pv.product_id,
-          p.name as product_name
-        FROM naxos.variant_price vp
-        JOIN naxos.product_variant pv ON vp.variant_id = pv.variant_id
-        JOIN naxos.product p ON pv.product_id = p.product_id
-        WHERE vp.variant_id = $1
-          AND vp.valid_from <= now()
-          AND (vp.valid_to IS NULL OR vp.valid_to > now())
-        ORDER BY vp.valid_from DESC
-        LIMIT 1
-      `, [variantId]);
-
-      if (result.rows.length === 0) {
-        return res.status(404).json({
-          error: 'Precio no encontrado',
-          message: 'No hay precio vigente para esta variante'
-        });
-      }
-
-      res.status(200).json({
-        message: 'Precio obtenido exitosamente',
-        price: result.rows[0]
-      });
-
-    } catch (error) {
-      console.error('Error obteniendo precio:', error);
-      res.status(500).json({
-        error: 'Error interno del servidor',
-        message: 'No se pudo obtener el precio'
-      });
-    }
-  }
-
-  // ==================== SABORES ====================
-  
-  // Crear sabor
-  static async createFlavor(req, res) {
-    try {
-      const { error, value } = flavorSchema.validate(req.body);
-      if (error) {
-        return res.status(400).json({
-          error: 'Datos de entrada inválidos',
-          message: error.details[0].message
-        });
-      }
-
-      const { name } = value;
-
-      const result = await query(
-        'INSERT INTO naxos.flavor (name) VALUES ($1) RETURNING *',
-        [name]
-      );
-
-      res.status(201).json({
-        message: 'Sabor creado exitosamente',
-        flavor: result.rows[0]
-      });
-
-    } catch (error) {
-      console.error('Error creando sabor:', error);
-      if (error.code === '23505') {
-        return res.status(409).json({
-          error: 'Sabor ya existe',
-          message: 'Ya existe un sabor con ese nombre'
-        });
-      }
-      res.status(500).json({
-        error: 'Error interno del servidor',
-        message: 'No se pudo crear el sabor'
-      });
-    }
-  }
-
-  // Obtener todos los sabores
-  static async getFlavors(req, res) {
-    try {
-      const result = await query(
-        'SELECT * FROM naxos.flavor ORDER BY name ASC'
-      );
-
-      res.status(200).json({
-        message: 'Sabores obtenidos exitosamente',
-        flavors: result.rows
-      });
-
-    } catch (error) {
-      console.error('Error obteniendo sabores:', error);
-      res.status(500).json({
-        error: 'Error interno del servidor',
-        message: 'No se pudieron obtener los sabores'
-      });
-    }
-  }
-
-  // ==================== MENÚ PÚBLICO ====================
-
-  // Obtener carta/menu público (sin autenticación requerida)
-  static async getPublicMenu(req, res) {
-    try {
-      // 1. Productos activos (para tarjetas)
-      const productsResult = await query(`
-        SELECT
-          p.product_id,
-          pc.name AS categoria,
-          p.name,
-          p.description,
-          p.image_url
-        FROM naxos.product p
-        LEFT JOIN naxos.product_category pc ON pc.category_id = p.category_id
-        WHERE p.is_active = true
-        ORDER BY pc.name NULLS LAST, p.name
-      `);
-
-      // 2. Variantes + precio (para mostrar dentro de cada producto)
-      const variantsResult = await query(`
-        SELECT
-          pv.product_id,
-          pv.variant_id,
-          pv.variant_name,
-          pv.ounces,
-          COALESCE(pv.image_url, p.image_url) AS foto_url,
-          vp.price AS precio_actual
-        FROM naxos.product_variant pv
-        JOIN naxos.product p ON p.product_id = pv.product_id
-        JOIN LATERAL (
-          SELECT price
-          FROM naxos.variant_price
-          WHERE variant_id = pv.variant_id
-            AND valid_from <= now()
-            AND (valid_to IS NULL OR valid_to > now())
-          ORDER BY valid_from DESC
-          LIMIT 1
-        ) vp ON true
-        WHERE p.is_active = true
-          AND pv.is_active = true
-        ORDER BY pv.product_id, pv.ounces NULLS LAST, pv.variant_name
-      `);
-
-      // 3. Sabores activos por producto (para chips/tags)
-      const flavorsResult = await query(`
-        SELECT
-          pf.product_id,
-          json_agg(f.name ORDER BY f.name) AS sabores_activos
-        FROM naxos.product_flavor pf
-        JOIN naxos.flavor f ON f.flavor_id = pf.flavor_id
-        WHERE pf.is_active = true
-        GROUP BY pf.product_id
-      `);
-
-      res.status(200).json({
-        message: 'Carta obtenida exitosamente',
-        menu: {
-          productos: productsResult.rows,
-          variantes: variantsResult.rows,
-          sabores: flavorsResult.rows
-        }
-      });
-
-    } catch (error) {
-      console.error('Error obteniendo carta:', error);
-      res.status(500).json({
-        error: 'Error interno del servidor',
-        message: 'No se pudo obtener la carta'
-      });
-    }
-  }
-}
-
-module.exports = ProductsController;
+module.exports = {
+  getAllProducts,
+  getProductById,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  getCategories,
+  getProductFlavors,
+  associateFlavorsToProduct,
+  removeFlavorFromProduct
+};
