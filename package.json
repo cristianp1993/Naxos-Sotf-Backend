@@ -2,11 +2,11 @@
   "name": "naxos-backend",
   "version": "1.0.0",
   "description": "Backend para Sistema POS Naxos - Gestión de ventas, inventario y cierre diario",
-  "main": "src/server.js",
+  "main": "src/index.js",
   "scripts": {
-    "dev": "nodemon src/server.js",
+    "dev": "nodemon src/index.js",
     "build": "echo 'No build required for backend'",
-    "start": "node src/server.js",
+    "start": "node src/index.js",
     "test": "jest",
     "install:all": "pnpm install && pnpm --filter ./Naxos-Frontend install"
   },
