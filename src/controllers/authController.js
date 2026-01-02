@@ -18,13 +18,16 @@ const registerSchema = Joi.object({
 
 // Controlador de autenticación
 class AuthController {
-  
+
   // Login de usuario
   static async login(req, res) {
     try {
+      console.log(' Login request received:', req.body);
+
       // Validar datos de entrada
       const { error, value } = loginSchema.validate(req.body);
       if (error) {
+        console.log(' Validation error:', error.details[0].message);
         return res.status(400).json({
           error: 'Datos de entrada inválidos',
           message: error.details[0].message
@@ -32,6 +35,7 @@ class AuthController {
       }
 
       const { username, password } = value;
+      console.log(' Searching for user:', username);
 
       // Buscar usuario en la base de datos
       const userResult = await query(
@@ -40,6 +44,7 @@ class AuthController {
       );
 
       if (userResult.rows.length === 0) {
+        console.log(' User not found');
         return res.status(401).json({
           error: 'Credenciales inválidas',
           message: 'Usuario o contraseña incorrectos'
@@ -47,9 +52,17 @@ class AuthController {
       }
 
       const user = userResult.rows[0];
+      console.log(' User data:', {
+        user_id: user.user_id,
+        username: user.username,
+        is_active: user.is_active,
+        hasPasswordHash: !!user.password_hash,
+        passwordHashLength: user.password_hash?.length || 0
+      });
 
       // Verificar si el usuario está activo
       if (!user.is_active) {
+        console.log(' User is inactive');
         return res.status(401).json({
           error: 'Usuario inactivo',
           message: 'Tu cuenta ha sido desactivada. Contacta al administrador.'
@@ -57,27 +70,42 @@ class AuthController {
       }
 
       // Verificar contraseña
+      console.log(' Comparing password...');
       const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+      console.log('✅ Password comparison result:', isPasswordValid);
+
       if (!isPasswordValid) {
+        console.log(' Password mismatch');
         return res.status(401).json({
           error: 'Credenciales inválidas',
           message: 'Usuario o contraseña incorrectos'
         });
       }
 
+      // Verificar JWT_SECRET
+      if (!process.env.JWT_SECRET) {
+        console.error(' JWT_SECRET is not defined in environment variables');
+        return res.status(500).json({
+          error: 'Error interno del servidor',
+          message: 'Configuración de seguridad incompleta'
+        });
+      }
+
       // Generar token JWT
       const token = jwt.sign(
-        { 
-          userId: user.user_id, 
-          username: user.username, 
-          role: user.role 
+        {
+          userId: user.user_id,
+          username: user.username,
+          role: user.role
         },
         process.env.JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
       );
 
+      console.log(' Login successful for user:', username);
+
       // Respuesta exitosa
-      res.status(200).json({
+      return res.status(200).json({
         message: 'Login exitoso',
         token,
         user: {
@@ -89,8 +117,8 @@ class AuthController {
       });
 
     } catch (error) {
-      console.error('Error en login:', error);
-      res.status(500).json({
+      console.error(' Error in login:', error);
+      return res.status(500).json({
         error: 'Error interno del servidor',
         message: 'No se pudo procesar el login'
       });
