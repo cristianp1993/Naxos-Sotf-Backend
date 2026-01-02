@@ -97,7 +97,8 @@ app.use('/api/flavors', routes.flavors);
 app.use('/api/menu', routes.menu);
 
 // Rutas de product flavors (debe estar en /api porque ya incluye /products en las rutas)
-app.use('/api', routes.productFlavors);
+app.use('/api/product-flavors', routes.productFlavors);
+
 
 // Middleware para rutas no encontradas
 app.use('*', (req, res) => {

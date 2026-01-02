@@ -1,8 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const FlavorsController = require('../controllers/flavorsController');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 // ==================== RUTAS DE SABORES ====================
+
+// Todas las rutas requieren autenticación de admin
+router.use(authenticateToken, requireAdmin);
 
 // Crear sabor
 router.post('/', FlavorsController.createFlavor);
