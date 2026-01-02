@@ -6,6 +6,11 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
+
+const dns = require("dns");
+dns.setDefaultResultOrder("ipv4first");
+console.log("DNS order:", dns.getDefaultResultOrder?.());
+
 // Importar rutas desde el archivo central
 const routes = require('./routes');
 
