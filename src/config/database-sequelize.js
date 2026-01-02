@@ -6,7 +6,7 @@ const shouldSync = (process.env.DB_SYNC || '').toLowerCase() === 'true';
 
 let sequelize;
 
-// ✅ Si existe DATABASE_URL (producción típica), usarla directamente
+// Si existe DATABASE_URL (producción típica), usarla directamente
 if (process.env.DATABASE_URL) {
   console.log('ℹ️ Usando DATABASE_URL para conexión a base de datos');
   sequelize = new Sequelize(process.env.DATABASE_URL, {
@@ -17,6 +17,12 @@ if (process.env.DATABASE_URL) {
         rejectUnauthorized: false,
       },
     },
+    // Fuerza IPv4 explícitamente
+    host: new URL(process.env.DATABASE_URL).hostname,
+    port: parseInt(new URL(process.env.DATABASE_URL).port, 10) || 5432,
+    username: decodeURIComponent(new URL(process.env.DATABASE_URL).username),
+    password: decodeURIComponent(new URL(process.env.DATABASE_URL).password),
+    database: new URL(process.env.DATABASE_URL).pathname.substring(1),
     logging: false,
     pool: {
       max: 20,
@@ -28,6 +34,14 @@ if (process.env.DATABASE_URL) {
       timestamps: true,
       underscored: true,
       schema: process.env.DB_SCHEMA || 'public',
+    },
+    // Esto es clave:
+    dialectModuleOptions: {
+      connection: {
+        host: new URL(process.env.DATABASE_URL).hostname,
+        port: parseInt(new URL(process.env.DATABASE_URL).port, 10) || 5432,
+        family: 4, // ← fuerza IPv4
+      },
     },
   });
 } else {
