@@ -5,7 +5,7 @@ const { Product, Category, Flavor, ProductFlavor } = require('../models');
 // Obtener todos los productos con información de categoría
 const getAllProducts = async (req, res) => {
   try {
-    console.log('🔍 Ejecutando getAllProducts...');
+    //console.log('🔍 Ejecutando getAllProducts...');
     const products = await Product.findAll({
       include: [{
         model: Category,
@@ -14,8 +14,8 @@ const getAllProducts = async (req, res) => {
       }],
       order: [['product_id', 'ASC']]
     });
-    console.log('📦 Productos encontrados:', products.length);
-    console.log('📦 Productos data:', JSON.stringify(products, null, 2));
+    //console.log('📦 Productos encontrados:', products.length);
+    //console.log('📦 Productos data:', JSON.stringify(products, null, 2));
     res.json({ success: true, data: products });
   } catch (error) {
     console.error('❌ Error al obtener productos:', error);
