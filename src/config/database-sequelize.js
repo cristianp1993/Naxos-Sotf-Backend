@@ -54,6 +54,8 @@ if (process.env.DATABASE_URL) {
   const DB_PASSWORD = process.env.DB_PASSWORD || '';
   const DB_SCHEMA = process.env.DB_SCHEMA || 'public';
 
+  console.log(`ℹ️ Usando ${DB_NAME} como DB`);
+
   sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASSWORD, {
     host: DB_HOST,
     port: DB_PORT,

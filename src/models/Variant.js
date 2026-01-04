@@ -46,6 +46,11 @@ const Variant = sequelize.define('Variant', {
     allowNull: true,
     field: 'image_url'
   },
+  price: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    field: 'price'
+  },
   is_active: {
     type: DataTypes.BOOLEAN,
     allowNull: false,

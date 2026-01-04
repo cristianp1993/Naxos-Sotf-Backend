@@ -17,53 +17,43 @@ class MenuController {
        * (En tu árbol vi "variant_price", pero si tu modelo usa "prices", revisa el nombre real.)
        */
       const sql = `
-        WITH current_price AS (
-          SELECT DISTINCT ON (vp.variant_id)
-            vp.variant_id,
-            vp.price
-          FROM naxos.variant_price vp
-          WHERE vp.valid_from <= NOW()
-            AND (vp.valid_to IS NULL OR vp.valid_to > NOW())
-          ORDER BY vp.variant_id, vp.valid_from DESC
-        )
         SELECT
-          pc.name                 AS categoria,
+  pc.name                 AS categoria,
 
-          p.product_id            AS product_id,
-          p.name                  AS product_name,
-          p.description           AS descripcion_producto,
-          p.image_url             AS product_image_url,
+  p.product_id            AS product_id,
+  p.name                  AS product_name,
+  p.description           AS descripcion_producto,
+  p.image_url             AS product_image_url,
 
-          f.flavor_id             AS flavor_id,
-          f.name                  AS sabor,
+  f.flavor_id             AS flavor_id,
+  f.name                  AS sabor,
 
-          pv.variant_id           AS variant_id,
-          pv.variant_name         AS tamano,
-          pv.ounces               AS onzas,
-          pv.toppings             AS toppings,
-          pv.image_url            AS variant_image_url,
+  pv.variant_id           AS variant_id,
+  pv.variant_name         AS tamano,
+  pv.ounces               AS onzas,
+  pv.toppings             AS toppings,
+  pv.image_url            AS variant_image_url,
 
-          cp.price                AS precio
-        FROM naxos.product_flavor pf
-        JOIN naxos.product p
-          ON p.product_id = pf.product_id
-        JOIN naxos.product_category pc
-          ON pc.category_id = p.category_id
-        JOIN naxos.flavor f
-          ON f.flavor_id = pf.flavor_id
-        JOIN naxos.product_variant pv
-          ON pv.product_id = pf.product_id
-        LEFT JOIN current_price cp
-          ON cp.variant_id = pv.variant_id
-        WHERE pf.is_active = true
-          AND p.is_active = true
-          AND pv.is_active = true
-        ORDER BY
-          pc.name ASC,
-          p.name ASC,
-          f.name ASC,
-          pv.ounces ASC,
-          pv.variant_name ASC
+  pv.price                AS precio  -- ← ahora viene directamente de product_variant
+
+FROM naxos.product_flavor pf
+JOIN naxos.product p
+  ON p.product_id = pf.product_id
+JOIN naxos.product_category pc
+  ON pc.category_id = p.category_id
+JOIN naxos.flavor f
+  ON f.flavor_id = pf.flavor_id
+JOIN naxos.product_variant pv
+  ON pv.product_id = pf.product_id
+WHERE pf.is_active = true
+  AND p.is_active = true
+  AND pv.is_active = true
+ORDER BY
+  pc.name ASC,
+  p.name ASC,
+  f.name ASC,
+  pv.ounces ASC,
+  pv.variant_name ASC;
       `;
 
       const rows = await sequelize.query(sql, {
