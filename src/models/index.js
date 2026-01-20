@@ -9,7 +9,6 @@ const isClass = (fn) => {
 
 const normalizeModel = (mod) => {
   if (!mod) throw new Error('Modelo inválido (undefined/null)');
-
   if (mod.findOne && mod.sequelize) return mod;
 
   if (isClass(mod)) {
@@ -18,14 +17,12 @@ const normalizeModel = (mod) => {
       if (!built?.findOne) throw new Error(`initModel() no devolvió un Model válido para ${mod.name}`);
       return built;
     }
-
     if (typeof mod.init === 'function') {
       throw new Error(
         `El modelo clase "${mod.name}" parece ser Sequelize Model pero no está inicializado. ` +
         `Agrega static initModel(sequelize, DataTypes) en su archivo y retorna la clase.`
       );
     }
-
     throw new Error(`El export "${mod.name}" es una clase pero no parece un modelo Sequelize`);
   }
 
@@ -45,6 +42,10 @@ const Variant = normalizeModel(require('./Variant'));
 const Price = normalizeModel(require('./Price'));
 const Flavor = normalizeModel(require('./Flavor'));
 const ProductFlavor = normalizeModel(require('./ProductFlavor'));
+
+const Sale = normalizeModel(require('./Sale'));
+const SaleItem = normalizeModel(require('./SaleItem'));
+const SalePayment = normalizeModel(require('./SalePayment'));
 
 Category.hasMany(Product, { foreignKey: 'category_id', as: 'products' });
 Product.belongsTo(Category, { foreignKey: 'category_id', as: 'category' });
@@ -74,6 +75,21 @@ Product.hasMany(ProductFlavor, { foreignKey: 'product_id', as: 'productFlavors' 
 ProductFlavor.belongsTo(Flavor, { foreignKey: 'flavor_id', as: 'flavor' });
 Flavor.hasMany(ProductFlavor, { foreignKey: 'flavor_id', as: 'productFlavors' });
 
+User.hasMany(Sale, { foreignKey: 'cashier_id', as: 'sales' });
+Sale.belongsTo(User, { foreignKey: 'cashier_id', as: 'cashier' });
+
+Variant.hasMany(SaleItem, { foreignKey: 'variant_id', as: 'saleItems' });
+SaleItem.belongsTo(Variant, { foreignKey: 'variant_id', as: 'variant' });
+
+Flavor.hasMany(SaleItem, { foreignKey: 'flavor_id', as: 'saleItems' });
+SaleItem.belongsTo(Flavor, { foreignKey: 'flavor_id', as: 'flavor' });
+
+Sale.hasMany(SaleItem, { foreignKey: 'sale_id', as: 'items' });
+SaleItem.belongsTo(Sale, { foreignKey: 'sale_id', as: 'sale' });
+
+Sale.hasMany(SalePayment, { foreignKey: 'sale_id', as: 'payments' });
+SalePayment.belongsTo(Sale, { foreignKey: 'sale_id', as: 'sale' });
+
 module.exports = {
   sequelize,
   User,
@@ -83,4 +99,7 @@ module.exports = {
   Price,
   Flavor,
   ProductFlavor,
+  Sale,
+  SaleItem,
+  SalePayment
 };
