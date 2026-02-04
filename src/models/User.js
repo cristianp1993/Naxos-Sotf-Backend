@@ -36,9 +36,13 @@ User.init(
     },
     email: {
       type: DataTypes.STRING(150),
-      allowNull: false,
+      allowNull: true,
       unique: true,
       validate: { isEmail: true },
+    },
+    name: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
     },
     password_hash: {
       type: DataTypes.STRING,
@@ -47,7 +51,7 @@ User.init(
     role: {
       type: DataTypes.STRING(20),
       allowNull: false,
-      defaultValue: 'CASHIER',
+      defaultValue: 'ADMIN',
     },
     is_active: {
       type: DataTypes.BOOLEAN,

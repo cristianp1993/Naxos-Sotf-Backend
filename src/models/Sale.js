@@ -21,7 +21,7 @@ const Sale = sequelize.define('Sale', {
   },
   location_id: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true,
     field: 'location_id'
   },
   cashier_id: {
@@ -29,8 +29,13 @@ const Sale = sequelize.define('Sale', {
     allowNull: false,
     field: 'cashier_id'
   },
+  observation: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    field: 'observation'
+  },
   customer_note: {
-    type: DataTypes.STRING(500),
+    type: DataTypes.TEXT,
     allowNull: true,
     field: 'customer_note'
   },

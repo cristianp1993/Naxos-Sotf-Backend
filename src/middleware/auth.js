@@ -80,7 +80,6 @@ const requireRole = (roles) => {
 };
 
 const requireAdmin = requireRole(['ADMIN']);
-const requireManagerOrAdmin = requireRole(['ADMIN', 'MANAGER']);
 
 const optionalAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -111,6 +110,5 @@ module.exports = {
   authenticateToken,
   requireRole,
   requireAdmin,
-  requireManagerOrAdmin,
   optionalAuth,
 };

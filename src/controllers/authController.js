@@ -11,9 +11,10 @@ const loginSchema = Joi.object({
 
 const registerSchema = Joi.object({
   username: Joi.string().min(3).max(50).required(),
-  email: Joi.string().email().optional(),
+  email: Joi.string().email().allow(null, '').optional(),
+  name: Joi.string().min(3).max(255).allow(null, '').optional(),
   password: Joi.string().min(6).required(),
-  role: Joi.string().valid('ADMIN', 'MANAGER', 'CASHIER', 'VIEWER').default('CASHIER'),
+  role: Joi.string().valid('ADMIN', 'OPERARIO').default('ADMIN'),
 });
 
 class AuthController {
@@ -38,7 +39,7 @@ class AuthController {
       // Buscar usuario (Sequelize)
       const [rows] = await sequelize.query(
         `
-        SELECT user_id, username, email, password_hash, role, is_active
+        SELECT user_id, username, email, name, password_hash, role, is_active
         FROM naxos.users
         WHERE username = :username
         LIMIT 1
@@ -116,6 +117,7 @@ class AuthController {
           user_id: user.user_id,
           username: user.username,
           email: user.email,
+          name: user.name,
           role: user.role,
         },
       });
@@ -139,14 +141,14 @@ class AuthController {
         });
       }
 
-      const { username, email, password, role } = value;
+      const { username, email, name, password, role } = value;
 
       // Verificar si el usuario ya existe
       const [existing] = await sequelize.query(
         `
         SELECT user_id
         FROM naxos.users
-        WHERE username = :username OR email = :email
+        WHERE username = :username OR (email IS NOT NULL AND email = :email)
         LIMIT 1
         `,
         { replacements: { username, email: email || null } }
@@ -166,16 +168,18 @@ class AuthController {
       // Crear usuario
       const [inserted] = await sequelize.query(
         `
-        INSERT INTO naxos.users (username, email, password_hash, role)
-        VALUES (:username, :email, :password_hash, :role)
-        RETURNING user_id, username, email, role, created_at
+        INSERT INTO naxos.users (username, email, name, password_hash, role, is_active)
+        VALUES (:username, :email, :name, :password_hash, :role, :is_active)
+        RETURNING user_id, username, email, name, role, is_active, created_at
         `,
         {
           replacements: {
             username,
             email: email || null,
+            name: name || null,
             password_hash: passwordHash,
-            role,
+            role: role || 'ADMIN',
+            is_active: true, // Siempre crear usuarios como activos
           },
         }
       );
@@ -188,6 +192,7 @@ class AuthController {
           user_id: newUser.user_id,
           username: newUser.username,
           email: newUser.email,
+          name: newUser.name,
           role: newUser.role,
           created_at: newUser.created_at,
         },
@@ -216,7 +221,7 @@ class AuthController {
 
       const [rows] = await sequelize.query(
         `
-        SELECT user_id, username, email, role, is_active, created_at, updated_at
+        SELECT user_id, username, email, name, role, is_active, created_at, updated_at
         FROM naxos.users
         WHERE user_id = :userId
         LIMIT 1
@@ -334,7 +339,7 @@ class AuthController {
 
       const [users] = await sequelize.query(
         `
-        SELECT user_id, username, email, role, is_active, created_at, updated_at
+        SELECT user_id, username, email, name, role, is_active, created_at, updated_at
         FROM naxos.users
         ORDER BY created_at DESC
         LIMIT :limit OFFSET :offset

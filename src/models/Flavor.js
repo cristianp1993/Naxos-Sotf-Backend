@@ -21,6 +21,7 @@ const Flavor = sequelize.define('Flavor', {
   }
 }, {
   tableName: 'flavor',
+  schema: 'naxos',
   timestamps: true,
   underscored: true
 });

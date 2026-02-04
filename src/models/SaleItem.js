@@ -30,20 +30,19 @@ const SaleItem = sequelize.define('SaleItem', {
   },
   unit_price: {
     type: DataTypes.DECIMAL(12, 2),
-    allowNull: false,
-    defaultValue: 0,
+    allowNull: true,
     field: 'unit_price'
   },
   line_total: {
     type: DataTypes.DECIMAL(12, 2),
     allowNull: false,
-    defaultValue: 0,
     field: 'line_total'
   }
 }, {
   tableName: 'sale_item',
   schema: 'naxos',
-  timestamps: false
+  timestamps: false,
+  omitFields: ['unit_price', 'line_total'] // No incluir estos campos si no se proporcionan
 });
 
 module.exports = SaleItem;

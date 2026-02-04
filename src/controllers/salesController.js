@@ -2,13 +2,13 @@ const Joi = require('joi');
 const { sequelize, Sale, SaleItem, SalePayment, Variant, Flavor } = require('../models');
 
 const saleSchema = Joi.object({
-  location_id: Joi.number().integer().positive().required(),
-  customer_note: Joi.string().max(500).allow(null, '').optional()
+  location_id: Joi.number().integer().positive().optional(),
+  observation: Joi.string().max(500).allow(null, '').optional()
 });
 
 const saleItemSchema = Joi.object({
   variant_id: Joi.number().integer().positive().required(),
-  flavor_id: Joi.number().integer().positive().allow(null).optional(),
+  flavor_name: Joi.string().max(100).allow(null, '').optional(),
   quantity: Joi.number().precision(3).positive().required(),
   unit_price: Joi.number().precision(2).positive().optional()
 });
@@ -20,8 +20,8 @@ const paymentSchema = Joi.object({
 });
 
 const fullSaleSchema = Joi.object({
-  location_id: Joi.number().integer().positive().required(),
-  customer_note: Joi.string().max(500).allow(null, '').optional(),
+  location_id: Joi.number().integer().positive().optional(),
+  observation: Joi.string().max(500).allow(null, '').optional(),
   items: Joi.array().min(1).items(saleItemSchema).required(),
   payments: Joi.array().min(1).items(paymentSchema).required()
 });
@@ -47,12 +47,12 @@ class SalesController {
       if (error) return res.status(400).json({ error: 'Datos de entrada inválidos', message: error.details[0].message });
 
       const cashier_id = req.user.user_id;
-      const { location_id, customer_note } = value;
+      const { location_id, observation } = value;
 
       const sale = await Sale.create({
         location_id,
         cashier_id,
-        customer_note: customer_note || null,
+        observation: observation || null,
         status: 'OPEN',
         opened_at: new Date(),
         subtotal: 0,
@@ -111,21 +111,51 @@ class SalesController {
 
       const { rows, count } = await Sale.findAndCountAll({
         where,
+        include: [
+          { 
+            model: SaleItem, 
+            as: 'items', 
+            include: [
+              { model: Variant, as: 'variant' },
+              { model: Flavor, as: 'flavor' }
+            ]
+          },
+          { model: SalePayment, as: 'payments' }
+        ],
         order: [['opened_at', 'DESC']],
         limit: parseInt(limit),
         offset
       });
 
-      return res.status(200).json({
-        message: 'Ventas obtenidas exitosamente',
-        sales: rows,
-        pagination: {
-          current_page: parseInt(page),
-          per_page: parseInt(limit),
-          total: count,
-          total_pages: Math.ceil(count / parseInt(limit))
+      // Transformar los datos para incluir nombres de productos y variantes
+      const transformedSales = rows.map(sale => {
+        const json = sale.toJSON();
+        
+        // Transformar métodos de pago
+        if (json.payments && Array.isArray(json.payments)) {
+          json.payments = json.payments.map(p => ({
+            ...p,
+            method: methodMapFromDb[p.method] || p.method
+          }));
         }
+
+        // Enriquecer items con nombres de productos y variantes
+        if (json.items && Array.isArray(json.items)) {
+          json.items = json.items.map(item => ({
+            ...item,
+            product_name: item.variant?.product?.product_name || 'Producto sin nombre',
+            variant_name: item.variant?.variant_name || 'Variante sin nombre',
+            flavor_name: item.flavor?.name || null,
+            // Mantener los campos originales por si acaso
+            unit_price: item.unit_price || 0,
+            line_total: item.line_total || 0
+          }));
+        }
+
+        return json;
       });
+
+      return res.status(200).json(transformedSales);
     } catch (error) {
       return res.status(500).json({ error: 'Error interno del servidor', message: 'No se pudieron obtener las ventas', details: error.message });
     }
@@ -179,9 +209,11 @@ class SalesController {
         sale_id: saleId,
         variant_id: value.variant_id,
         flavor_id: value.flavor_id || null,
-        quantity: qty,
-        unit_price: unitPrice,
-        line_total: lineTotal
+        quantity: qty
+        // unit_price: omitido - el trigger lo calculará
+        // line_total: omitido - el trigger lo calculará
+      }, {
+        fields: ['sale_id', 'variant_id', 'flavor_id', 'quantity'] // Solo estos campos
       });
 
       return res.status(201).json({ message: 'Item agregado a la venta exitosamente', item });
@@ -204,10 +236,7 @@ class SalesController {
       const patch = {};
       if (quantity !== undefined) patch.quantity = Number(quantity);
       if (unit_price !== undefined) patch.unit_price = Number(unit_price);
-
-      const nextQty = patch.quantity !== undefined ? patch.quantity : Number(item.quantity);
-      const nextUnit = patch.unit_price !== undefined ? patch.unit_price : Number(item.unit_price);
-      patch.line_total = Number((nextQty * nextUnit).toFixed(2));
+      // No actualizamos line_total - la base de datos lo genera automáticamente
 
       await SaleItem.update(patch, { where: { sale_item_id: itemId } });
       const updated = await SaleItem.findByPk(itemId);
@@ -264,18 +293,23 @@ class SalesController {
       }
 
       const cashier_id = req.user.user_id;
-      const { location_id, customer_note, items, payments } = value;
+      const { location_id, observation, items, payments } = value;
+
+      console.log('🔍 DEBUG - Creando venta con observation:', observation);
+      console.log('🔍 DEBUG - Payload completo:', { location_id, observation, items: items.length, payments: payments.length });
 
       const sale = await Sale.create({
         location_id,
         cashier_id,
-        customer_note: customer_note || null,
+        observation: observation || null,
         status: 'OPEN',
         opened_at: new Date(),
         subtotal: 0,
         tax: 0,
         total: 0
       }, { transaction: t });
+
+      console.log('🔍 DEBUG - Venta creada con ID:', sale.sale_id, 'y observation:', sale.observation);
 
       const variantIds = [...new Set(items.map(i => i.variant_id))];
       const variants = await Variant.findAll({ where: { variant_id: variantIds }, transaction: t });
@@ -284,12 +318,26 @@ class SalesController {
         return res.status(400).json({ error: 'Variant inválido', message: 'Uno o más variant_id no existen' });
       }
 
-      const flavorIds = [...new Set(items.map(i => i.flavor_id).filter(Boolean))];
-      if (flavorIds.length > 0) {
-        const flavors = await Flavor.findAll({ where: { flavor_id: flavorIds }, transaction: t });
-        if (flavors.length !== flavorIds.length) {
+      const flavorNames = [...new Set(items.map(i => i.flavor_name).filter(Boolean))];
+      console.log('🔍 DEBUG - Flavor names recibidos:', flavorNames);
+      
+      let flavorMap = new Map();
+      if (flavorNames.length > 0) {
+        const flavors = await Flavor.findAll({ 
+          where: { name: flavorNames }, 
+          transaction: t 
+        });
+        console.log('🔍 DEBUG - Sabores encontrados en BD:', flavors.map(f => ({ id: f.flavor_id, name: f.name })));
+        
+        // Crear mapa de nombre a ID
+        flavorMap = new Map(flavors.map(f => [f.name, f.flavor_id]));
+        
+        // Verificar que todos los nombres existen
+        const notFound = flavorNames.filter(name => !flavorMap.has(name));
+        if (notFound.length > 0) {
+          console.log('🔍 DEBUG - Sabores no encontrados:', notFound);
           await t.rollback();
-          return res.status(400).json({ error: 'Flavor inválido', message: 'Uno o más flavor_id no existen' });
+          return res.status(400).json({ error: 'Flavor inválido', message: `Los siguientes sabores no existen: ${notFound.join(', ')}` });
         }
       }
 
@@ -298,21 +346,25 @@ class SalesController {
       let subtotal = 0;
       const itemsPayload = items.map(i => {
         const v = variantById.get(i.variant_id);
-        const unitPrice = i.unit_price !== undefined && i.unit_price !== null ? Number(i.unit_price) : Number(v.precio_actual || 0);
+        // No enviamos unit_price - el trigger lo calculará automáticamente
         const qty = Number(i.quantity);
+        const unitPrice = i.unit_price !== undefined && i.unit_price !== null ? Number(i.unit_price) : Number(v.precio_actual || 0);
         const lineTotal = Number((unitPrice * qty).toFixed(2));
         subtotal += lineTotal;
         return {
           sale_id: sale.sale_id,
           variant_id: i.variant_id,
-          flavor_id: i.flavor_id || null,
-          quantity: qty,
-          unit_price: unitPrice,
-          line_total: lineTotal
+          flavor_id: i.flavor_name ? flavorMap.get(i.flavor_name) : null,
+          quantity: qty
+          // unit_price: omitido - el trigger lo calculará
+          // line_total: omitido - el trigger lo calculará
         };
       });
 
-      await SaleItem.bulkCreate(itemsPayload, { transaction: t });
+      await SaleItem.bulkCreate(itemsPayload, { 
+        transaction: t,
+        fields: ['sale_id', 'variant_id', 'flavor_id', 'quantity'] // Solo estos campos
+      });
 
       const tax = 0;
       const total = Number(subtotal.toFixed(2));

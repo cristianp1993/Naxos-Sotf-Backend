@@ -11,6 +11,7 @@ const routes = require('./routes');
 
 // Importar controlador de menú para ruta pública
 const MenuController = require('./controllers/menuController');
+const DashboardController = require('./controllers/dashboardController');
 
 // Importar configuración de base de datos Sequelize
 const { testConnection, syncModels } = require('./config/database-sequelize');
@@ -95,6 +96,9 @@ app.use('/api/variants', routes.variants);
 app.use('/api/prices', routes.prices);
 app.use('/api/flavors', routes.flavors);
 app.use('/api/menu', routes.menu);
+
+// Rutas de dashboard
+app.get('/api/dashboard/stats', DashboardController.getStats);
 
 // Rutas de product flavors (debe estar en /api porque ya incluye /products en las rutas)
 app.use('/api/product-flavors', routes.productFlavors);

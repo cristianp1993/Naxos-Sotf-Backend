@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const ReportsController = require('../controllers/reportsController');
-const { authenticateToken, requireManagerOrAdmin } = require('../middleware/auth');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 // Todas las rutas requieren autenticación
 router.use(authenticateToken);
@@ -10,16 +10,16 @@ router.use(authenticateToken);
 router.get('/dashboard', ReportsController.getDashboard);
 
 // Reportes de ventas
-router.get('/sales', requireManagerOrAdmin, ReportsController.getSalesReport);
+router.get('/sales', requireAdmin, ReportsController.getSalesReport);
 
 // Reportes de inventario
-router.get('/inventory/movements', requireManagerOrAdmin, ReportsController.getInventoryMovementsReport);
+router.get('/inventory/movements', requireAdmin, ReportsController.getInventoryMovementsReport);
 router.get('/stock', ReportsController.getStockReport);
 
 // Reportes de turnos
-router.get('/shifts', requireManagerOrAdmin, ReportsController.getShiftsReport);
+router.get('/shifts', requireAdmin, ReportsController.getShiftsReport);
 
 // Reportes de productos
-router.get('/products', requireManagerOrAdmin, ReportsController.getProductsReport);
+router.get('/products', requireAdmin, ReportsController.getProductsReport);
 
 module.exports = router;
