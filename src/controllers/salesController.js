@@ -161,6 +161,74 @@ class SalesController {
     }
   }
 
+  static async deleteSale(req, res) {
+    const t = await sequelize.transaction();
+    try {
+      const saleId = parseInt(req.params.id);
+
+      // Verificar que la venta existe
+      const sale = await Sale.findByPk(saleId, {
+        include: [
+          { model: SaleItem, as: 'items' },
+          { model: SalePayment, as: 'payments' }
+        ],
+        transaction: t
+      });
+
+      if (!sale) {
+        await t.rollback();
+        return res.status(404).json({ error: 'Venta no encontrada', message: 'La venta especificada no existe' });
+      }
+
+      console.log(`🗑️ Eliminando venta ${saleId} con ${sale.payments.length} pagos y ${sale.items.length} items`);
+
+      // 1. Eliminar pagos primero (orden correcto para evitar errores de foreign key)
+      if (sale.payments && sale.payments.length > 0) {
+        const paymentIds = sale.payments.map(p => p.payment_id);
+        await SalePayment.destroy({
+          where: { payment_id: paymentIds },
+          transaction: t
+        });
+        console.log(`✅ Eliminados ${paymentIds.length} pagos`);
+      }
+
+      // 2. Eliminar items después
+      if (sale.items && sale.items.length > 0) {
+        const itemIds = sale.items.map(item => item.sale_item_id);
+        await SaleItem.destroy({
+          where: { sale_item_id: itemIds },
+          transaction: t
+        });
+        console.log(`✅ Eliminados ${itemIds.length} items`);
+      }
+
+      // 3. Eliminar la venta finalmente
+      await Sale.destroy({
+        where: { sale_id: saleId },
+        transaction: t
+      });
+      console.log(`✅ Eliminada venta ${saleId}`);
+
+      await t.commit();
+
+      return res.status(200).json({ 
+        message: 'Venta eliminada exitosamente', 
+        sale_id: saleId,
+        deleted_items: sale.items?.length || 0,
+        deleted_payments: sale.payments?.length || 0
+      });
+
+    } catch (error) {
+      await t.rollback();
+      console.error('❌ Error eliminando venta:', error);
+      return res.status(500).json({ 
+        error: 'Error interno del servidor', 
+        message: 'No se pudo eliminar la venta', 
+        details: error.message 
+      });
+    }
+  }
+
   static async cancelSale(req, res) {
     try {
       const saleId = parseInt(req.params.id);
