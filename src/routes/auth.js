@@ -13,5 +13,7 @@ router.post('/register', requireAdmin, AuthController.register);
 router.get('/profile', AuthController.getProfile);
 router.put('/change-password', AuthController.changePassword);
 router.get('/users', requireAdmin, AuthController.getUsers);
+router.put('/users/:userId', requireAdmin, AuthController.updateUser);
+router.delete('/users/:userId', requireAdmin, AuthController.deleteUser);
 
 module.exports = router;

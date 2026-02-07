@@ -14,7 +14,7 @@ const registerSchema = Joi.object({
   email: Joi.string().email().allow(null, '').optional(),
   name: Joi.string().min(3).max(255).allow(null, '').optional(),
   password: Joi.string().min(6).required(),
-  role: Joi.string().valid('ADMIN', 'OPERARIO').default('ADMIN'),
+  role: Joi.string().valid('ADMIN', 'CASHIER').default('ADMIN'),
 });
 
 class AuthController {
@@ -179,7 +179,7 @@ class AuthController {
             name: name || null,
             password_hash: passwordHash,
             role: role || 'ADMIN',
-            is_active: true, // Siempre crear usuarios como activos
+            is_active: true,
           },
         }
       );
@@ -194,6 +194,7 @@ class AuthController {
           email: newUser.email,
           name: newUser.name,
           role: newUser.role,
+          is_active: newUser.is_active,
           created_at: newUser.created_at,
         },
       });
@@ -368,6 +369,187 @@ class AuthController {
       return res.status(500).json({
         error: 'Error interno del servidor',
         message: 'No se pudieron obtener los usuarios',
+      });
+    }
+  }
+
+  // Actualizar usuario (solo para ADMIN)
+  static async updateUser(req, res) {
+    try {
+      const { userId } = req.params;
+      const { username, email, name, role, is_active } = req.body;
+
+      // Validar datos de entrada
+      const updateSchema = Joi.object({
+        username: Joi.string().min(3).max(50).optional(),
+        email: Joi.string().email().allow(null, '').optional(),
+        name: Joi.string().min(3).max(255).allow(null, '').optional(),
+        role: Joi.string().valid('ADMIN', 'CASHIER').optional(),
+        is_active: Joi.boolean().optional(),
+      });
+
+      const { error, value } = updateSchema.validate(req.body);
+      if (error) {
+        return res.status(400).json({
+          error: 'Datos de entrada inválidos',
+          message: error.details[0].message,
+        });
+      }
+
+      // Verificar si el usuario existe
+      const [existingUser] = await sequelize.query(
+        `
+        SELECT user_id
+        FROM naxos.users
+        WHERE user_id = :userId
+        LIMIT 1
+        `,
+        { replacements: { userId } }
+      );
+
+      if (!existingUser || existingUser.length === 0) {
+        return res.status(404).json({
+          error: 'Usuario no encontrado',
+          message: 'El usuario especificado no existe',
+        });
+      }
+
+      // Si se está actualizando username o email, verificar que no existan
+      if (value.username || value.email) {
+        const [duplicateCheck] = await sequelize.query(
+          `
+          SELECT user_id
+          FROM naxos.users
+          WHERE (username = :username OR (email IS NOT NULL AND email = :email))
+          AND user_id != :userId
+          LIMIT 1
+          `,
+          {
+            replacements: {
+              username: value.username || '',
+              email: value.email || null,
+              userId,
+            },
+          }
+        );
+
+        if (duplicateCheck && duplicateCheck.length > 0) {
+          return res.status(409).json({
+            error: 'Conflicto de datos',
+            message: 'Ya existe otro usuario con ese nombre de usuario o email',
+          });
+        }
+      }
+
+      // Construir dinámicamente la consulta de actualización
+      const updateFields = [];
+      const updateValues = { userId };
+
+      if (value.username !== undefined) {
+        updateFields.push('username = :username');
+        updateValues.username = value.username;
+      }
+      if (value.email !== undefined) {
+        updateFields.push('email = :email');
+        updateValues.email = value.email || null;
+      }
+      if (value.name !== undefined) {
+        updateFields.push('name = :name');
+        updateValues.name = value.name || null;
+      }
+      if (value.role !== undefined) {
+        updateFields.push('role = :role');
+        updateValues.role = value.role;
+      }
+      if (value.is_active !== undefined) {
+        updateFields.push('is_active = :is_active');
+        updateValues.is_active = value.is_active;
+      }
+
+      if (updateFields.length === 0) {
+        return res.status(400).json({
+          error: 'Sin datos para actualizar',
+          message: 'No se proporcionaron campos válidos para actualizar',
+        });
+      }
+
+      updateFields.push('updated_at = NOW()');
+
+      // Ejecutar actualización
+      const [updated] = await sequelize.query(
+        `
+        UPDATE naxos.users
+        SET ${updateFields.join(', ')}
+        WHERE user_id = :userId
+        RETURNING user_id, username, email, name, role, is_active, created_at, updated_at
+        `,
+        { replacements: updateValues }
+      );
+
+      const updatedUser = updated[0];
+
+      return res.status(200).json({
+        message: 'Usuario actualizado exitosamente',
+        user: updatedUser,
+      });
+    } catch (err) {
+      console.error('Error actualizando usuario:', err);
+      return res.status(500).json({
+        error: 'Error interno del servidor',
+        message: 'No se pudo actualizar el usuario',
+      });
+    }
+  }
+
+  // Eliminar usuario (solo para ADMIN)
+  static async deleteUser(req, res) {
+    try {
+      const { userId } = req.params;
+
+      // Verificar si el usuario existe
+      const [existingUser] = await sequelize.query(
+        `
+        SELECT user_id, username
+        FROM naxos.users
+        WHERE user_id = :userId
+        LIMIT 1
+        `,
+        { replacements: { userId } }
+      );
+
+      if (!existingUser || existingUser.length === 0) {
+        return res.status(404).json({
+          error: 'Usuario no encontrado',
+          message: 'El usuario especificado no existe',
+        });
+      }
+
+      // Evitar que un usuario se elimine a sí mismo
+      const currentUserId = req.user?.user_id || req.user?.userId;
+      if (userId === currentUserId) {
+        return res.status(400).json({
+          error: 'Operación no permitida',
+          message: 'No puedes eliminar tu propio usuario',
+        });
+      }
+
+      // Eliminar usuario
+      await sequelize.query(
+        `
+        DELETE FROM naxos.users
+        WHERE user_id = :userId
+        `,
+        { replacements: { userId } }
+      );
+
+      return res.status(200).json({
+        message: 'Usuario eliminado exitosamente',
+      });
+    } catch (err) {
+      console.error('Error eliminando usuario:', err);
+      return res.status(500).json({
+        error: 'Error interno del servidor',
+        message: 'No se pudo eliminar el usuario',
       });
     }
   }
