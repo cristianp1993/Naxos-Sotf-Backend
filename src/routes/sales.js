@@ -17,6 +17,7 @@ router.put('/items/:itemId', SalesController.updateSaleItem);
 router.delete('/items/:itemId', SalesController.removeSaleItem);
 router.post('/:saleId/payments', SalesController.processPayment);
 router.get('/:id', SalesController.getSaleById);
+router.put('/:id', SalesController.updateSale);
 router.delete('/:id', SalesController.deleteSale);
 router.delete('/:id/cancel', SalesController.cancelSale);
 

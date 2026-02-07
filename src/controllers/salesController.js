@@ -487,6 +487,175 @@ class SalesController {
       return res.status(500).json({ error: 'Error interno del servidor', message: 'No se pudo crear la venta', details: error.message });
     }
   }
+
+  static async updateSale(req, res) {
+    const t = await sequelize.transaction();
+    
+    try {
+      const saleId = parseInt(req.params.id);
+      
+      // Validación completa - items y pagos
+      const { observation, items, payments } = req.body;
+      
+      if (!payments || !Array.isArray(payments) || payments.length === 0) {
+        await t.rollback();
+        return res.status(400).json({ error: 'Datos inválidos', message: 'Se requiere al menos un método de pago' });
+      }
+
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        await t.rollback();
+        return res.status(400).json({ error: 'Datos inválidos', message: 'Se requiere al menos un item' });
+      }
+
+      // Validar pagos individualmente
+      for (const payment of payments) {
+        const paymentValidation = paymentSchema.validate(payment);
+        if (paymentValidation.error) {
+          await t.rollback();
+          return res.status(400).json({ 
+            error: 'Datos de pago inválidos', 
+            message: `Error en pago: ${paymentValidation.error.details[0].message}` 
+          });
+        }
+      }
+
+      // Validar items individualmente
+      for (const item of items) {
+        const itemValidation = saleItemSchema.validate(item);
+        if (itemValidation.error) {
+          await t.rollback();
+          return res.status(400).json({ 
+            error: 'Datos de item inválidos', 
+            message: `Error en item: ${itemValidation.error.details[0].message}` 
+          });
+        }
+      }
+
+      // Verificar que la venta existe
+      const existingSale = await Sale.findByPk(saleId, { transaction: t });
+      if (!existingSale) {
+        await t.rollback();
+        return res.status(404).json({ error: 'Venta no encontrada', message: 'La venta especificada no existe' });
+      }
+
+      // Actualizar observación de la venta (si se proporciona)
+      if (observation !== undefined) {
+        await Sale.update(
+          { observation },
+          { where: { sale_id: saleId }, transaction: t }
+        );
+      }
+
+      // Obtener items existentes
+      const existingItems = await SaleItem.findAll({ 
+        where: { sale_id: saleId }, 
+        transaction: t 
+      });
+
+      // Actualizar items existentes o crear nuevos
+      let subtotal = 0;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const line_total = Number(item.quantity) * Number(item.unit_price);
+        subtotal += line_total;
+
+        if (existingItems[i]) {
+          // Actualizar item existente (sin line_total porque es generado)
+          await SaleItem.update(
+            {
+              variant_id: item.variant_id,
+              flavor_name: item.flavor_name || null,
+              quantity: Number(item.quantity),
+              unit_price: Number(item.unit_price)
+              // line_total se calcula automáticamente en la BD
+            },
+            { 
+              where: { sale_item_id: existingItems[i].sale_item_id }, 
+              transaction: t 
+            }
+          );
+        } else {
+          // Crear nuevo item (si hay más items que antes)
+          await SaleItem.create(
+            {
+              sale_id: saleId,
+              variant_id: item.variant_id,
+              flavor_name: item.flavor_name || null,
+              quantity: Number(item.quantity),
+              unit_price: Number(item.unit_price)
+              // line_total se calcula automáticamente en la BD
+            },
+            { transaction: t }
+          );
+        }
+      }
+
+      // Eliminar items sobrantes (si hay menos items que antes)
+      if (items.length < existingItems.length) {
+        const itemsToDelete = existingItems.slice(items.length);
+        for (const itemToDelete of itemsToDelete) {
+          await SaleItem.destroy(
+            { where: { sale_item_id: itemToDelete.sale_item_id }, transaction: t }
+          );
+        }
+      }
+
+      // Eliminar pagos existentes y crear nuevos
+      await SalePayment.destroy({ where: { sale_id: saleId }, transaction: t });
+
+      // Crear nuevos pagos
+      const paymentsPayload = payments.map(p => ({
+        sale_id: saleId,
+        method: methodMapToDb[p.method],
+        amount: Number(p.amount),
+        reference: p.reference || null,
+        paid_at: new Date()
+      }));
+
+      await SalePayment.bulkCreate(paymentsPayload, { transaction: t });
+
+      // Calcular totales basados en items (precios neutros sin IVA)
+      const tax = 0; // Sin IVA - precios neutros
+      const total = subtotal; // Total = subtotal (sin IVA)
+
+      // Actualizar totales de la venta
+      await Sale.update({
+        subtotal,
+        tax,
+        total,
+        status: 'PAID',
+        paid_at: new Date()
+      }, { where: { sale_id: saleId }, transaction: t });
+
+      await t.commit();
+
+      // Obtener la venta actualizada con relaciones
+      const updatedSale = await Sale.findByPk(saleId, {
+        include: [
+          { model: SaleItem, as: 'items' },
+          { model: SalePayment, as: 'payments' }
+        ]
+      });
+
+      const json = updatedSale.toJSON();
+      if (json.payments && Array.isArray(json.payments)) {
+        json.payments = json.payments.map(p => ({
+          ...p,
+          method: methodMapFromDb[p.method] || p.method
+        }));
+      }
+
+      return res.status(200).json({ message: 'Venta actualizada exitosamente', sale: json });
+    } catch (error) {
+      await t.rollback();
+      console.error('Error updating sale:', error);
+      return res.status(500).json({ 
+        error: 'Error interno del servidor', 
+        message: 'No se pudo actualizar la venta', 
+        details: error.message 
+      });
+    }
+  }
 }
 
 module.exports = SalesController;

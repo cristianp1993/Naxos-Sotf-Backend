@@ -77,7 +77,8 @@ app.get('/', (req, res) => {
       variants: '/api/variants',
       prices: '/api/prices',
       flavors: '/api/flavors',
-      menu: '/api/menu'
+      menu: '/api/menu',
+      expenses: '/api/expenses'
     }
   });
 });
@@ -96,6 +97,7 @@ app.use('/api/variants', routes.variants);
 app.use('/api/prices', routes.prices);
 app.use('/api/flavors', routes.flavors);
 app.use('/api/menu', routes.menu);
+app.use('/api/expenses', routes.expenses);
 
 // Rutas de dashboard
 app.get('/api/dashboard/stats', DashboardController.getStats);

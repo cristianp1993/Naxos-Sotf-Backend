@@ -18,6 +18,7 @@ const variantsRoutes = require('./variants');
 const pricesRoutes = require('./prices');
 const flavorsRoutes = require('./flavors');
 const menuRoutes = require('./menu');
+const expensesRoutes = require('./expenses');
 
 // Rutas de product_flavors
 const productFlavorsRoutes = require('./productFlavors');
@@ -36,6 +37,7 @@ module.exports = {
   prices: pricesRoutes,
   flavors: flavorsRoutes,
   menu: menuRoutes,
+  expenses: expensesRoutes,
   // Product flavors routes
   productFlavors: productFlavorsRoutes
 };
