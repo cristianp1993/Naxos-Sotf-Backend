@@ -44,6 +44,9 @@ class VariantsController {
         is_active
       });
 
+      console.log('🔍 DEBUG - Variante creada con precio en product_variant.price:', price);
+      console.log('🔍 DEBUG - Variante completa:', variant.toJSON());
+
       return res.status(201).json({
         message: 'Variante creada exitosamente',
         variant
@@ -208,6 +211,9 @@ class VariantsController {
         price,
         is_active
       });
+
+      console.log('🔍 DEBUG - Variante actualizada con precio en product_variant.price:', price);
+      console.log('🔍 DEBUG - Variante actualizada completa:', updatedVariant.toJSON());
 
       return res.status(200).json({
         message: 'Variante actualizada exitosamente',

@@ -419,14 +419,16 @@ class SalesController {
         const unitPrice = i.unit_price !== undefined && i.unit_price !== null ? Number(i.unit_price) : Number(v.precio_actual || 0);
         const lineTotal = Number((unitPrice * qty).toFixed(2));
         subtotal += lineTotal;
-        return {
+        const payload = {
           sale_id: sale.sale_id,
           variant_id: i.variant_id,
-          flavor_id: i.flavor_name ? flavorMap.get(i.flavor_name) : null,
+          flavor_id: i.flavor_name ? Number(flavorMap.get(i.flavor_name)) : null,
           quantity: qty
           // unit_price: omitido - el trigger lo calculará
           // line_total: omitido - el trigger lo calculará
         };
+        console.log('🔍 DEBUG - createFullSale item payload:', payload);
+        return payload;
       });
 
       await SaleItem.bulkCreate(itemsPayload, { 
@@ -552,6 +554,17 @@ class SalesController {
         transaction: t 
       });
 
+      // Obtener sabores para mapeo de nombres a IDs
+      const flavorNames = [...new Set(items.map(i => i.flavor_name).filter(Boolean))];
+      let flavorMap = new Map();
+      if (flavorNames.length > 0) {
+        const flavors = await Flavor.findAll({ 
+          where: { name: flavorNames }, 
+          transaction: t 
+        });
+        flavorMap = new Map(flavors.map(f => [f.name, f.flavor_id]));
+      }
+
       // Actualizar items existentes o crear nuevos
       let subtotal = 0;
       for (let i = 0; i < items.length; i++) {
@@ -561,10 +574,16 @@ class SalesController {
 
         if (existingItems[i]) {
           // Actualizar item existente (sin line_total porque es generado)
+          console.log('🔍 DEBUG - Updating SaleItem with:', {
+            variant_id: item.variant_id,
+            flavor_id: item.flavor_name ? Number(flavorMap.get(item.flavor_name)) : null,
+            quantity: Number(item.quantity),
+            unit_price: Number(item.unit_price)
+          });
           await SaleItem.update(
             {
               variant_id: item.variant_id,
-              flavor_name: item.flavor_name || null,
+              flavor_id: item.flavor_name ? Number(flavorMap.get(item.flavor_name)) : null,
               quantity: Number(item.quantity),
               unit_price: Number(item.unit_price)
               // line_total se calcula automáticamente en la BD
@@ -576,11 +595,18 @@ class SalesController {
           );
         } else {
           // Crear nuevo item (si hay más items que antes)
+          console.log('🔍 DEBUG - Creating new SaleItem with:', {
+            sale_id: saleId,
+            variant_id: item.variant_id,
+            flavor_id: item.flavor_name ? Number(flavorMap.get(item.flavor_name)) : null,
+            quantity: Number(item.quantity),
+            unit_price: Number(item.unit_price)
+          });
           await SaleItem.create(
             {
               sale_id: saleId,
               variant_id: item.variant_id,
-              flavor_name: item.flavor_name || null,
+              flavor_id: item.flavor_name ? Number(flavorMap.get(item.flavor_name)) : null,
               quantity: Number(item.quantity),
               unit_price: Number(item.unit_price)
               // line_total se calcula automáticamente en la BD
