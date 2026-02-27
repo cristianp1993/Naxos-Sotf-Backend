@@ -292,8 +292,8 @@ class ReportsController {
           periodo: {
             start_date,
             end_date,
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString()
+            startDate: start_date, // Usar directamente el string de entrada
+            endDate: end_date      // Usar directamente el string de entrada
           },
           resumen: {
             total_ingresos: parseFloat(salesData.total_ingresos),
@@ -386,30 +386,166 @@ class ReportsController {
         });
       }
 
-      // Por ahora, devolvemos el mismo JSON que el reporte normal
-      // En una implementación completa, aquí generaríamos el archivo PDF/Excel
-      const reportResponse = await this.getCashFlowReport({
-        query: { start_date, end_date }
-      }, {
-        status: (code) => ({
-          json: (data) => data
-        })
+      // Create date range in Colombia timezone
+      const startDate = new Date(start_date + 'T00:00:00-05:00');
+      const endDate = new Date(end_date + 'T23:59:59-05:00');
+      
+      console.log('🔍 Download Cash Flow - Rango fechas Colombia:', {
+        start_date,
+        end_date,
+        format,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString()
       });
 
-      const reportData = reportResponse.data;
+      // Generar el reporte normal para obtener los datos
+      // Simulamos la llamada al reporte sin pasar req/res para evitar recursividad
+      const t = await sequelize.transaction();
+      
+      try {
+        // 1. Total ingresos por ventas con desglose por método de pago
+        const [salesResults] = await sequelize.query(`
+          SELECT 
+            COUNT(DISTINCT s.sale_id) as total_ventas,
+            COALESCE(SUM(s.total), 0) as total_ingresos,
+            COALESCE(SUM(CASE WHEN sp.method = 'CASH' THEN sp.amount ELSE 0 END), 0) as total_efectivo,
+            COALESCE(SUM(CASE WHEN sp.method = 'TRANSFER' THEN sp.amount ELSE 0 END), 0) as total_transferencia,
+            COALESCE(SUM(CASE WHEN sp.method = 'CARD' THEN sp.amount ELSE 0 END), 0) as total_tarjeta,
+            COALESCE(SUM(CASE WHEN sp.method = 'OTHER' THEN sp.amount ELSE 0 END), 0) as total_otro,
+            COUNT(CASE WHEN sp.method = 'CASH' THEN 1 END) as ventas_efectivo,
+            COUNT(CASE WHEN sp.method = 'TRANSFER' THEN 1 END) as ventas_transferencia,
+            COUNT(CASE WHEN sp.method = 'CARD' THEN 1 END) as ventas_tarjeta,
+            COUNT(CASE WHEN sp.method = 'OTHER' THEN 1 END) as ventas_otro
+          FROM naxos.sale s
+          JOIN naxos.sale_payment sp ON s.sale_id = sp.sale_id
+          WHERE s.opened_at BETWEEN :startDate AND :endDate
+            AND s.status = 'PAID'
+        `, {
+          transaction: t,
+          replacements: { startDate, endDate }
+        });
 
-      if (format === 'pdf') {
-        // TODO: Implementar generación de PDF
-        return res.status(200).json({
-          message: 'Descarga PDF no implementada aún',
-          data: reportData
+        // 2. Total gastos
+        const [expenseResults] = await sequelize.query(`
+          SELECT 
+            COALESCE(SUM(e.amount), 0) as total_egresos,
+            COUNT(e.expense_id) as total_gastos
+          FROM naxos.expense e
+          WHERE e.expense_date BETWEEN :startDate AND :endDate
+        `, {
+          transaction: t,
+          replacements: { startDate, endDate }
         });
-      } else if (format === 'excel') {
-        // TODO: Implementar generación de Excel
-        return res.status(200).json({
-          message: 'Descarga Excel no implementada aún',
-          data: reportData
+
+        // 3. Detalle de gastos
+        const [expenseDetails] = await sequelize.query(`
+          SELECT 
+            e.expense_id,
+            DATE(e.expense_date) as fecha,
+            e.concept,
+            e.description,
+            e.amount
+          FROM naxos.expense e
+          WHERE e.expense_date BETWEEN :startDate AND :endDate
+          ORDER BY e.expense_date DESC
+        `, {
+          transaction: t,
+          replacements: { startDate, endDate }
         });
+
+        // 4. Ventas por tamaño
+        const [salesBySizeResults] = await sequelize.query(`
+          SELECT 
+            pv.variant_name as tamaño,
+            COUNT(si.sale_item_id) as cantidad_vendida,
+            COALESCE(SUM(si.quantity), 0) as total_unidades,
+            COALESCE(SUM(si.line_total), 0) as total_ventas
+          FROM naxos.sale s
+          JOIN naxos.sale_item si ON s.sale_id = si.sale_id
+          JOIN naxos.product_variant pv ON si.variant_id = pv.variant_id
+          WHERE s.opened_at BETWEEN :startDate AND :endDate
+            AND s.status = 'PAID'
+          GROUP BY pv.variant_id, pv.variant_name
+          ORDER BY total_ventas DESC
+        `, {
+          transaction: t,
+          replacements: { startDate, endDate }
+        });
+
+        await t.commit();
+
+        const salesData = salesResults[0];
+        const expenseData = expenseResults[0];
+        
+        const reportData = {
+          periodo: {
+            start_date,
+            end_date,
+            startDate: start_date, // Usar directamente el string de entrada
+            endDate: end_date      // Usar directamente el string de entrada
+          },
+          resumen: {
+            total_ingresos: parseFloat(salesData.total_ingresos),
+            total_egresos: parseFloat(expenseData.total_egresos),
+            diferencia: parseFloat(salesData.total_ingresos) - parseFloat(expenseData.total_egresos),
+            resultado: parseFloat(salesData.total_ingresos) >= parseFloat(expenseData.total_egresos) ? 'POSITIVO' : 'NEGATIVO'
+          },
+          ventas: {
+            total_ventas: parseInt(salesData.total_ventas),
+            desglose_pagos: {
+              efectivo: {
+                cantidad: parseInt(salesData.ventas_efectivo),
+                total: parseFloat(salesData.total_efectivo)
+              },
+              transferencia: {
+                cantidad: parseInt(salesData.ventas_transferencia),
+                total: parseFloat(salesData.total_transferencia)
+              },
+              tarjeta: {
+                cantidad: parseInt(salesData.ventas_tarjeta),
+                total: parseFloat(salesData.total_tarjeta)
+              },
+              otro: {
+                cantidad: parseInt(salesData.ventas_otro),
+                total: parseFloat(salesData.total_otro)
+              }
+            }
+          },
+          gastos: {
+            total_gastos: parseInt(expenseData.total_gastos),
+            detalle: expenseDetails.map(expense => ({
+              id: expense.expense_id,
+              fecha: expense.fecha.toISOString().split('T')[0],
+              concepto: expense.concept,
+              description: expense.description || '',
+              monto: parseFloat(expense.amount)
+            }))
+          },
+          ventas_por_tamaño: salesBySizeResults.map(size => ({
+            tamaño: size.tamaño,
+            cantidad_vendida: parseInt(size.cantidad_vendida),
+            total_unidades: parseInt(size.total_unidades),
+            total_ventas: parseFloat(size.total_ventas)
+          }))
+        };
+
+        if (format === 'pdf') {
+          // TODO: Implementar generación de PDF real
+          return res.status(200).json({
+            message: 'Descarga PDF preparada (implementación pendiente)',
+            data: reportData
+          });
+        } else if (format === 'excel') {
+          // TODO: Implementar generación de Excel real
+          return res.status(200).json({
+            message: 'Descarga Excel preparada (implementación pendiente)',
+            data: reportData
+          });
+        }
+
+      } catch (error) {
+        await t.rollback();
+        throw error;
       }
 
     } catch (error) {
@@ -605,8 +741,8 @@ class ReportsController {
           periodo: {
             start_date,
             end_date,
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString()
+            startDate: start_date, // Usar directamente el string de entrada
+            endDate: end_date      // Usar directamente el string de entrada
           },
           resumen: {
             total_ventas: parseInt(salesData.total_ventas),
@@ -699,30 +835,106 @@ class ReportsController {
         });
       }
 
-      // Por ahora, devolvemos el mismo JSON que el reporte normal
-      // En una implementación completa, aquí generaríamos el archivo PDF/Excel
-      const reportResponse = await this.getSalesSummary({
-        query: { start_date, end_date }
-      }, {
-        status: (code) => ({
-          json: (data) => data
-        })
+      // Create date range in Colombia timezone
+      const startDate = new Date(start_date + 'T00:00:00-05:00');
+      const endDate = new Date(end_date + 'T23:59:59-05:00');
+      
+      console.log('🔍 Download Sales Summary - Rango fechas Colombia:', {
+        start_date,
+        end_date,
+        format,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString()
       });
 
-      const reportData = reportResponse.data;
+      // Generar el reporte normal para obtener los datos
+      const t = await sequelize.transaction();
+      
+      try {
+        // 1. Resumen general de ventas
+        const [salesSummaryResults] = await sequelize.query(`
+          SELECT 
+            COUNT(DISTINCT s.sale_id) as total_ventas,
+            COALESCE(SUM(s.total), 0) as total_ventas_valor,
+            COALESCE(AVG(s.total), 0) as valor_promedio_venta,
+            COALESCE(SUM(
+              (SELECT COUNT(*) FROM naxos.sale_item WHERE sale_id = s.sale_id)
+            ), 0) as total_items_vendidos,
+            COALESCE(SUM(
+              (SELECT SUM(quantity) FROM naxos.sale_item WHERE sale_id = s.sale_id)
+            ), 0) as total_unidades_vendidas
+          FROM naxos.sale s
+          WHERE s.opened_at BETWEEN :startDate AND :endDate
+            AND s.status = 'PAID'
+        `, {
+          transaction: t,
+          replacements: { startDate, endDate }
+        });
 
-      if (format === 'pdf') {
-        // TODO: Implementar generación de PDF
-        return res.status(200).json({
-          message: 'Descarga PDF no implementada aún',
-          data: reportData
+        // 2. Desglose por método de pago
+        const [paymentMethodsResults] = await sequelize.query(`
+          SELECT 
+            sp.method,
+            COUNT(DISTINCT s.sale_id) as cantidad_ventas,
+            COALESCE(SUM(sp.amount), 0) as total,
+            COUNT(*) as transacciones
+          FROM naxos.sale s
+          JOIN naxos.sale_payment sp ON s.sale_id = sp.sale_id
+          WHERE s.opened_at BETWEEN :startDate AND :endDate
+            AND s.status = 'PAID'
+          GROUP BY sp.method
+          ORDER BY total DESC
+        `, {
+          transaction: t,
+          replacements: { startDate, endDate }
         });
-      } else if (format === 'excel') {
-        // TODO: Implementar generación de Excel
-        return res.status(200).json({
-          message: 'Descarga Excel no implementada aún',
-          data: reportData
-        });
+
+        const salesData = salesSummaryResults[0];
+        
+        // Procesar resultados de métodos de pago
+        const paymentMethods = paymentMethodsResults.map(pm => ({
+          method: pm.method === 'CASH' ? 'EFECTIVO' : 
+                 pm.method === 'TRANSFER' ? 'TRANSFERENCIA' :
+                 pm.method === 'CARD' ? 'TARJETA' : 'OTRO',
+          cantidad_ventas: parseInt(pm.cantidad_ventas),
+          total: parseFloat(pm.total),
+          transacciones: parseInt(pm.transacciones)
+        }));
+
+        const reportData = {
+          periodo: {
+            start_date,
+            end_date,
+            startDate: start_date, // Usar directamente el string de entrada
+            endDate: end_date      // Usar directamente el string de entrada
+          },
+          resumen: {
+            total_ventas: parseInt(salesData.total_ventas),
+            total_ventas_valor: parseFloat(salesData.total_ventas_valor),
+            valor_promedio_venta: parseFloat(salesData.valor_promedio_venta),
+            total_items_vendidos: parseInt(salesData.total_items_vendidos),
+            total_unidades_vendidas: parseFloat(salesData.total_unidades_vendidas)
+          },
+          metodos_pago: paymentMethods
+        };
+
+        await t.commit();
+
+        if (format === 'pdf') {
+          return res.status(200).json({
+            message: 'Descarga PDF preparada (implementación pendiente)',
+            data: reportData
+          });
+        } else if (format === 'excel') {
+          return res.status(200).json({
+            message: 'Descarga Excel preparada (implementación pendiente)',
+            data: reportData
+          });
+        }
+
+      } catch (error) {
+        await t.rollback();
+        throw error;
       }
 
     } catch (error) {
