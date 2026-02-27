@@ -22,4 +22,12 @@ router.get('/shifts', requireAdmin, ReportsController.getShiftsReport);
 // Reportes de productos
 router.get('/products', requireAdmin, ReportsController.getProductsReport);
 
+// Reportes de flujo de caja
+router.get('/cash-flow', requireAdmin, ReportsController.getCashFlowReport);
+router.get('/cash-flow/download', requireAdmin, ReportsController.downloadCashFlowReport);
+
+// Reportes de resumen de ventas
+router.get('/sales-summary', requireAdmin, ReportsController.getSalesSummary);
+router.get('/sales-summary/download', requireAdmin, ReportsController.downloadSalesSummaryReport);
+
 module.exports = router;

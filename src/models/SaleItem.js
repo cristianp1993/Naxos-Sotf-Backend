@@ -37,6 +37,17 @@ const SaleItem = sequelize.define('SaleItem', {
     type: DataTypes.DECIMAL(12, 2),
     allowNull: false,
     field: 'line_total'
+  },
+  is_promo_2x1: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'is_promo_2x1'
+  },
+  promo_reference: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    field: 'promo_reference'
   }
 }, {
   tableName: 'sale_item',

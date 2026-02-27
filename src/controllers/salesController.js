@@ -1,5 +1,6 @@
 const Joi = require('joi');
 const { sequelize, Sale, SaleItem, SalePayment, Variant, Flavor } = require('../models');
+const { Op } = require('sequelize');
 
 const saleSchema = Joi.object({
   location_id: Joi.number().integer().positive().optional(),
@@ -10,7 +11,9 @@ const saleItemSchema = Joi.object({
   variant_id: Joi.number().integer().positive().required(),
   flavor_name: Joi.string().max(100).allow(null, '').optional(),
   quantity: Joi.number().precision(3).positive().required(),
-  unit_price: Joi.number().precision(2).positive().optional()
+  unit_price: Joi.number().precision(2).min(0).optional(),
+  is_promo_2x1: Joi.boolean().optional(),
+  promo_reference: Joi.string().max(50).allow(null, '').optional()
 });
 
 const paymentSchema = Joi.object({
@@ -38,6 +41,49 @@ const methodMapFromDb = {
   CARD: 'TARJETA',
   TRANSFER: 'TRANSFERENCIA',
   OTHER: 'OTRO'
+};
+
+// Función para procesar promociones 2x1
+const process2x1Promo = (items) => {
+  const processedItems = [];
+  const promoGroups = {};
+  
+  // Agrupar items por referencia de promoción
+  items.forEach(item => {
+    if (item.is_promo_2x1 && item.promo_reference) {
+      if (!promoGroups[item.promo_reference]) {
+        promoGroups[item.promo_reference] = [];
+      }
+      promoGroups[item.promo_reference].push(item);
+    } else {
+      processedItems.push(item);
+    }
+  });
+  
+  // Procesar cada grupo de promoción 2x1
+  Object.keys(promoGroups).forEach(ref => {
+    const groupItems = promoGroups[ref];
+    
+    if (groupItems.length === 2) {
+      // Es una promoción 2x1 válida: el primero con precio normal, el segundo en 0
+      groupItems[0].unit_price = Number(groupItems[0].unit_price);
+      groupItems[0].line_total = Number((groupItems[0].unit_price * groupItems[0].quantity).toFixed(2));
+      
+      groupItems[1].unit_price = 0;
+      groupItems[1].line_total = 0;
+      
+      processedItems.push(groupItems[0], groupItems[1]);
+    } else {
+      // Si no es un par completo, todos pagan precio normal
+      groupItems.forEach(item => {
+        item.unit_price = Number(item.unit_price);
+        item.line_total = Number((item.unit_price * item.quantity).toFixed(2));
+        processedItems.push(item);
+      });
+    }
+  });
+  
+  return processedItems;
 };
 
 class SalesController {
@@ -103,8 +149,16 @@ class SalesController {
       if (cashier_id) where.cashier_id = parseInt(cashier_id);
       if (start_date || end_date) {
         where.opened_at = {};
-        if (start_date) where.opened_at.$gte = new Date(start_date);
-        if (end_date) where.opened_at.$lte = new Date(end_date);
+        if (start_date) {
+          // Create date in Colombia timezone (UTC-5)
+          const startDateWithTime = new Date(start_date + 'T00:00:00-05:00');
+          where.opened_at[Op.gte] = startDateWithTime;
+        }
+        if (end_date) {
+          // Create date in Colombia timezone (UTC-5) and set to end of day
+          const endDateWithTime = new Date(end_date + 'T23:59:59-05:00');
+          where.opened_at[Op.lte] = endDateWithTime;
+        }
       }
 
       const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -411,21 +465,27 @@ class SalesController {
 
       const variantById = new Map(variants.map(v => [v.variant_id, v]));
 
+      // Procesar promociones 2x1 antes de calcular totales
+      const processedItems = process2x1Promo(items);
+      
       let subtotal = 0;
-      const itemsPayload = items.map(i => {
+      const itemsPayload = processedItems.map(i => {
         const v = variantById.get(i.variant_id);
-        // No enviamos unit_price - el trigger lo calculará automáticamente
         const qty = Number(i.quantity);
-        const unitPrice = i.unit_price !== undefined && i.unit_price !== null ? Number(i.unit_price) : Number(v.precio_actual || 0);
-        const lineTotal = Number((unitPrice * qty).toFixed(2));
+        
+        // Usar el unit_price procesado del frontend
+        const unitPrice = Number(i.unit_price);
+        // Usar el line_total procesado del frontend, no recalcular
+        const lineTotal = Number(i.line_total || (unitPrice * qty));
         subtotal += lineTotal;
+        
         const payload = {
           sale_id: sale.sale_id,
           variant_id: i.variant_id,
           flavor_id: i.flavor_name ? Number(flavorMap.get(i.flavor_name)) : null,
-          quantity: qty
-          // unit_price: omitido - el trigger lo calculará
-          // line_total: omitido - el trigger lo calculará
+          quantity: qty,
+          is_promo_2x1: i.is_promo_2x1 || false,
+          promo_reference: i.promo_reference || null
         };
         console.log('🔍 DEBUG - createFullSale item payload:', payload);
         return payload;
@@ -433,7 +493,7 @@ class SalesController {
 
       await SaleItem.bulkCreate(itemsPayload, { 
         transaction: t,
-        fields: ['sale_id', 'variant_id', 'flavor_id', 'quantity'] // Solo estos campos
+        fields: ['sale_id', 'variant_id', 'flavor_id', 'quantity', 'is_promo_2x1', 'promo_reference']
       });
 
       const tax = 0;

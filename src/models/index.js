@@ -46,6 +46,7 @@ const ProductFlavor = normalizeModel(require('./ProductFlavor'));
 const Sale = normalizeModel(require('./Sale'));
 const SaleItem = normalizeModel(require('./SaleItem'));
 const SalePayment = normalizeModel(require('./SalePayment'));
+const Expense = normalizeModel(require('./Expense'));
 
 Category.hasMany(Product, { foreignKey: 'category_id', as: 'products' });
 Product.belongsTo(Category, { foreignKey: 'category_id', as: 'category' });
@@ -101,5 +102,6 @@ module.exports = {
   ProductFlavor,
   Sale,
   SaleItem,
-  SalePayment
+  SalePayment,
+  Expense
 };
