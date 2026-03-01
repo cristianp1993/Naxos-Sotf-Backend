@@ -150,14 +150,16 @@ class SalesController {
       if (start_date || end_date) {
         where.opened_at = {};
         if (start_date) {
-          // Create date in Colombia timezone (UTC-5)
-          const startDateWithTime = new Date(start_date + 'T00:00:00-05:00');
-          where.opened_at[Op.gte] = startDateWithTime;
+          // 🔥 CORRECCIÓN: Crear rango de fecha completo para Colombia timezone
+          const startDate = new Date(start_date + 'T00:00:00-05:00');
+          const startDateUTC = new Date(startDate.getTime() + (5 * 60 * 60 * 1000)); // Convertir a UTC
+          where.opened_at[Op.gte] = startDateUTC;
         }
         if (end_date) {
-          // Create date in Colombia timezone (UTC-5) and set to end of day
-          const endDateWithTime = new Date(end_date + 'T23:59:59-05:00');
-          where.opened_at[Op.lte] = endDateWithTime;
+          // 🔥 CORRECCIÓN: Incluir todo el día (23:59:59) en Colombia timezone
+          const endDate = new Date(end_date + 'T23:59:59-05:00');
+          const endDateUTC = new Date(endDate.getTime() + (5 * 60 * 60 * 1000)); // Convertir a UTC
+          where.opened_at[Op.lte] = endDateUTC;
         }
       }
 
@@ -284,11 +286,58 @@ class SalesController {
 
       // Check if this is a filtered request that needs totals
       if ((start_date || end_date) && !totals_only) {
-        // Calculate totals for the filtered data
-        const grandTotal = transformedSales.reduce((sum, sale) => sum + (sale.total || 0), 0);
+        // 🔥 CORRECCIÓN: Calcular totales de TODAS las ventas filtradas, no solo la página actual
+        
+        // Obtener TODAS las ventas que coinciden con el filtro (sin paginación)
+        const allFilteredSales = await Sale.findAll({
+          where,
+          include: [
+            { 
+              model: SaleItem, 
+              as: 'items', 
+              include: [
+                { model: Variant, as: 'variant' },
+                { model: Flavor, as: 'flavor' }
+              ]
+            },
+            { model: SalePayment, as: 'payments' }
+          ],
+          order: [['opened_at', 'DESC']]
+          // 🔥 SIN limit ni offset para obtener TODOS los resultados
+        });
+
+        // Transformar los datos de todas las ventas filtradas
+        const allTransformedSales = allFilteredSales.map(sale => {
+          const json = sale.toJSON();
+          
+          // Transformar métodos de pago
+          if (json.payments && Array.isArray(json.payments)) {
+            json.payments = json.payments.map(p => ({
+              ...p,
+              method: methodMapFromDb[p.method] || p.method
+            }));
+          }
+
+          // Enriquecer items con nombres de productos y variantes
+          if (json.items && Array.isArray(json.items)) {
+            json.items = json.items.map(item => ({
+              ...item,
+              product_name: item.variant?.product?.product_name || 'Producto sin nombre',
+              variant_name: item.variant?.variant_name || 'Variante sin nombre',
+              flavor_name: item.flavor?.name || null,
+              unit_price: item.unit_price || 0,
+              line_total: item.line_total || 0
+            }));
+          }
+
+          return json;
+        });
+
+        // Calculate totals from ALL filtered sales
+        const grandTotal = allTransformedSales.reduce((sum, sale) => sum + (sale.total || 0), 0);
         const paymentMethods = {};
         
-        transformedSales.forEach(sale => {
+        allTransformedSales.forEach(sale => {
           if (sale.payments && Array.isArray(sale.payments)) {
             sale.payments.forEach(payment => {
               const method = payment.method || 'SIN METODO';
@@ -303,8 +352,8 @@ class SalesController {
         });
 
         return res.status(200).json({
-          sales: transformedSales,
-          total: count,
+          sales: transformedSales, // Paginados para la vista
+          total: count,           // Total count para paginación
           totals: {
             grand_total: grandTotal,
             payment_methods: paymentMethods
