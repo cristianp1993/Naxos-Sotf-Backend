@@ -386,8 +386,6 @@ class SalesController {
         return res.status(404).json({ error: 'Venta no encontrada', message: 'La venta especificada no existe' });
       }
 
-      console.log(`🗑️ Eliminando venta ${saleId} con ${sale.payments.length} pagos y ${sale.items.length} items`);
-
       // 1. Eliminar pagos primero (orden correcto para evitar errores de foreign key)
       if (sale.payments && sale.payments.length > 0) {
         const paymentIds = sale.payments.map(p => p.payment_id);
@@ -395,7 +393,6 @@ class SalesController {
           where: { payment_id: paymentIds },
           transaction: t
         });
-        console.log(`✅ Eliminados ${paymentIds.length} pagos`);
       }
 
       // 2. Eliminar items después
@@ -405,7 +402,6 @@ class SalesController {
           where: { sale_item_id: itemIds },
           transaction: t
         });
-        console.log(`✅ Eliminados ${itemIds.length} items`);
       }
 
       // 3. Eliminar la venta finalmente
@@ -413,7 +409,6 @@ class SalesController {
         where: { sale_id: saleId },
         transaction: t
       });
-      console.log(`✅ Eliminada venta ${saleId}`);
 
       await t.commit();
 
@@ -569,15 +564,9 @@ class SalesController {
       const cashier_id = req.user.user_id;
       const { location_id, observation, items, payments } = value;
 
-      console.log('🔍 DEBUG - Creando venta con observation:', observation);
-      console.log('🔍 DEBUG - Payload completo:', { location_id, observation, items: items.length, payments: payments.length });
-
       // 🔥 SOLUCIÓN: Forzar hora Colombia en todas las fechas
       const nowUTC = new Date();
       const colombiaTime = new Date(nowUTC.getTime() - (5 * 60 * 60 * 1000)); // UTC-5
-      
-      console.log('🔍 TIMEZONE - UTC:', nowUTC.toISOString());
-      console.log('🔍 TIMEZONE - Colombia:', colombiaTime.toISOString());
 
       const sale = await Sale.create({
         location_id,
@@ -590,8 +579,6 @@ class SalesController {
         total: 0
       }, { transaction: t });
 
-      console.log('🔍 DEBUG - Venta creada con ID:', sale.sale_id, 'y hora Colombia:', sale.opened_at);
-
       const variantIds = [...new Set(items.map(i => i.variant_id))];
       const variants = await Variant.findAll({ where: { variant_id: variantIds }, transaction: t });
       if (variants.length !== variantIds.length) {
@@ -600,7 +587,6 @@ class SalesController {
       }
 
       const flavorNames = [...new Set(items.map(i => i.flavor_name).filter(Boolean))];
-      console.log('🔍 DEBUG - Flavor names recibidos:', flavorNames);
       
       let flavorMap = new Map();
       if (flavorNames.length > 0) {
@@ -608,7 +594,6 @@ class SalesController {
           where: { name: flavorNames }, 
           transaction: t 
         });
-        console.log('🔍 DEBUG - Sabores encontrados en BD:', flavors.map(f => ({ id: f.flavor_id, name: f.name })));
         
         // Crear mapa de nombre a ID
         flavorMap = new Map(flavors.map(f => [f.name, f.flavor_id]));
@@ -616,7 +601,6 @@ class SalesController {
         // Verificar que todos los nombres existen
         const notFound = flavorNames.filter(name => !flavorMap.has(name));
         if (notFound.length > 0) {
-          console.log('🔍 DEBUG - Sabores no encontrados:', notFound);
           await t.rollback();
           return res.status(400).json({ error: 'Flavor inválido', message: `Los siguientes sabores no existen: ${notFound.join(', ')}` });
         }
@@ -646,7 +630,6 @@ class SalesController {
           is_promo_2x1: i.is_promo_2x1 || false,
           promo_reference: i.promo_reference || null
         };
-        console.log('🔍 DEBUG - createFullSale item payload:', payload);
         return payload;
       });
 
@@ -793,12 +776,6 @@ class SalesController {
 
         if (existingItems[i]) {
           // Actualizar item existente (sin line_total porque es generado)
-          console.log('🔍 DEBUG - Updating SaleItem with:', {
-            variant_id: item.variant_id,
-            flavor_id: item.flavor_name ? Number(flavorMap.get(item.flavor_name)) : null,
-            quantity: Number(item.quantity),
-            unit_price: Number(item.unit_price)
-          });
           await SaleItem.update(
             {
               variant_id: item.variant_id,
@@ -814,13 +791,6 @@ class SalesController {
           );
         } else {
           // Crear nuevo item (si hay más items que antes)
-          console.log('🔍 DEBUG - Creating new SaleItem with:', {
-            sale_id: saleId,
-            variant_id: item.variant_id,
-            flavor_id: item.flavor_name ? Number(flavorMap.get(item.flavor_name)) : null,
-            quantity: Number(item.quantity),
-            unit_price: Number(item.unit_price)
-          });
           await SaleItem.create(
             {
               sale_id: saleId,
