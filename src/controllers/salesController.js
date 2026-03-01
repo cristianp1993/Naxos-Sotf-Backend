@@ -523,18 +523,25 @@ class SalesController {
       console.log('🔍 DEBUG - Creando venta con observation:', observation);
       console.log('🔍 DEBUG - Payload completo:', { location_id, observation, items: items.length, payments: payments.length });
 
+      // 🔥 SOLUCIÓN: Forzar hora Colombia en todas las fechas
+      const nowUTC = new Date();
+      const colombiaTime = new Date(nowUTC.getTime() - (5 * 60 * 60 * 1000)); // UTC-5
+      
+      console.log('🔍 TIMEZONE - UTC:', nowUTC.toISOString());
+      console.log('🔍 TIMEZONE - Colombia:', colombiaTime.toISOString());
+
       const sale = await Sale.create({
         location_id,
         cashier_id,
         observation: observation || null,
         status: 'OPEN',
-        opened_at: new Date(),
+        opened_at: colombiaTime,  // 🔥 Usar hora Colombia
         subtotal: 0,
         tax: 0,
         total: 0
       }, { transaction: t });
 
-      console.log('🔍 DEBUG - Venta creada con ID:', sale.sale_id, 'y observation:', sale.observation);
+      console.log('🔍 DEBUG - Venta creada con ID:', sale.sale_id, 'y hora Colombia:', sale.opened_at);
 
       const variantIds = [...new Set(items.map(i => i.variant_id))];
       const variants = await Variant.findAll({ where: { variant_id: variantIds }, transaction: t });
@@ -616,7 +623,7 @@ class SalesController {
         method: methodMapToDb[p.method],
         amount: Number(p.amount),
         reference: p.reference || null,
-        paid_at: new Date()
+        paid_at: colombiaTime  // 🔥 Usar hora Colombia en pagos
       }));
 
       await SalePayment.bulkCreate(paymentsPayload, { transaction: t });
@@ -626,7 +633,7 @@ class SalesController {
         tax,
         total,
         status: 'PAID',
-        paid_at: new Date()
+        paid_at: colombiaTime  // 🔥 Usar hora Colombia también en pago
       }, { where: { sale_id: sale.sale_id }, transaction: t });
 
       await t.commit();
