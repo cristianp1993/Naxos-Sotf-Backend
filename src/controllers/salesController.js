@@ -141,7 +141,7 @@ class SalesController {
 
   static async getSales(req, res) {
     try {
-      const { status, location_id, cashier_id, start_date, end_date, page = 1, limit = 20 } = req.query;
+      const { status, location_id, cashier_id, start_date, end_date, page = 1, limit = 20, totals_only } = req.query;
 
       const where = {};
       if (status) where.status = status;
@@ -161,6 +161,79 @@ class SalesController {
         }
       }
 
+      // If totals_only is true, return only totals without pagination
+      if (totals_only === 'true') {
+        const sales = await Sale.findAll({
+          where,
+          include: [
+            { 
+              model: SaleItem, 
+              as: 'items', 
+              include: [
+                { model: Variant, as: 'variant' },
+                { model: Flavor, as: 'flavor' }
+              ]
+            },
+            { model: SalePayment, as: 'payments' }
+          ],
+          order: [['opened_at', 'DESC']]
+        });
+
+        // Transformar los datos
+        const transformedSales = sales.map(sale => {
+          const json = sale.toJSON();
+          
+          // Transformar métodos de pago
+          if (json.payments && Array.isArray(json.payments)) {
+            json.payments = json.payments.map(p => ({
+              ...p,
+              method: methodMapFromDb[p.method] || p.method
+            }));
+          }
+
+          // Enriquecer items con nombres de productos y variantes
+          if (json.items && Array.isArray(json.items)) {
+            json.items = json.items.map(item => ({
+              ...item,
+              product_name: item.variant?.product?.product_name || 'Producto sin nombre',
+              variant_name: item.variant?.variant_name || 'Variante sin nombre',
+              flavor_name: item.flavor?.name || null,
+              unit_price: item.unit_price || 0,
+              line_total: item.line_total || 0
+            }));
+          }
+
+          return json;
+        });
+
+        // Calculate totals
+        const grandTotal = transformedSales.reduce((sum, sale) => sum + (sale.total || 0), 0);
+        const paymentMethods = {};
+        
+        transformedSales.forEach(sale => {
+          if (sale.payments && Array.isArray(sale.payments)) {
+            sale.payments.forEach(payment => {
+              const method = payment.method || 'SIN METODO';
+              const amount = payment.amount || 0;
+              
+              if (!paymentMethods[method]) {
+                paymentMethods[method] = 0;
+              }
+              paymentMethods[method] += amount;
+            });
+          }
+        });
+
+        return res.status(200).json({
+          totals: {
+            grand_total: grandTotal,
+            payment_methods: paymentMethods,
+            total_count: transformedSales.length
+          }
+        });
+      }
+
+      // Normal pagination query
       const offset = (parseInt(page) - 1) * parseInt(limit);
 
       const { rows, count } = await Sale.findAndCountAll({
@@ -208,6 +281,36 @@ class SalesController {
 
         return json;
       });
+
+      // Check if this is a filtered request that needs totals
+      if ((start_date || end_date) && !totals_only) {
+        // Calculate totals for the filtered data
+        const grandTotal = transformedSales.reduce((sum, sale) => sum + (sale.total || 0), 0);
+        const paymentMethods = {};
+        
+        transformedSales.forEach(sale => {
+          if (sale.payments && Array.isArray(sale.payments)) {
+            sale.payments.forEach(payment => {
+              const method = payment.method || 'SIN METODO';
+              const amount = payment.amount || 0;
+              
+              if (!paymentMethods[method]) {
+                paymentMethods[method] = 0;
+              }
+              paymentMethods[method] += amount;
+            });
+          }
+        });
+
+        return res.status(200).json({
+          sales: transformedSales,
+          total: count,
+          totals: {
+            grand_total: grandTotal,
+            payment_methods: paymentMethods
+          }
+        });
+      }
 
       return res.status(200).json(transformedSales);
     } catch (error) {
