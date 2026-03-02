@@ -209,19 +209,19 @@ class SalesController {
         });
 
         // Calculate totals
-        const grandTotal = transformedSales.reduce((sum, sale) => sum + (sale.total || 0), 0);
+        const grandTotal = transformedSales.reduce((sum, sale) => sum + (Number(sale.total) || 0), 0);
         const paymentMethods = {};
         
         transformedSales.forEach(sale => {
           if (sale.payments && Array.isArray(sale.payments)) {
             sale.payments.forEach(payment => {
               const method = payment.method || 'SIN METODO';
-              const amount = payment.amount || 0;
+              const amount = Number(payment.amount) || 0; // 🔥 Convertir a número explícitamente
               
               if (!paymentMethods[method]) {
                 paymentMethods[method] = 0;
               }
-              paymentMethods[method] += amount;
+              paymentMethods[method] += amount; // 🔥 Suma numérica, no concatenación
             });
           }
         });
@@ -334,19 +334,19 @@ class SalesController {
         });
 
         // Calculate totals from ALL filtered sales
-        const grandTotal = allTransformedSales.reduce((sum, sale) => sum + (sale.total || 0), 0);
+        const grandTotal = allTransformedSales.reduce((sum, sale) => sum + (Number(sale.total) || 0), 0);
         const paymentMethods = {};
         
         allTransformedSales.forEach(sale => {
           if (sale.payments && Array.isArray(sale.payments)) {
             sale.payments.forEach(payment => {
               const method = payment.method || 'SIN METODO';
-              const amount = payment.amount || 0;
+              const amount = Number(payment.amount) || 0; // 🔥 Convertir a número explícitamente
               
               if (!paymentMethods[method]) {
                 paymentMethods[method] = 0;
               }
-              paymentMethods[method] += amount;
+              paymentMethods[method] += amount; // 🔥 Suma numérica, no concatenación
             });
           }
         });
