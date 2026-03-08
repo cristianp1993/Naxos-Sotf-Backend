@@ -48,6 +48,11 @@ const SaleItem = normalizeModel(require('./SaleItem'));
 const SalePayment = normalizeModel(require('./SalePayment'));
 const Expense = normalizeModel(require('./Expense'));
 
+// Modelos de gamificación / loyalty
+const LoyaltyMember = normalizeModel(require('./LoyaltyMember'));
+const PointsLedger = normalizeModel(require('./PointsLedger'));
+const RewardsCatalog = normalizeModel(require('./RewardsCatalog'));
+
 Category.hasMany(Product, { foreignKey: 'category_id', as: 'products' });
 Product.belongsTo(Category, { foreignKey: 'category_id', as: 'category' });
 
@@ -91,6 +96,10 @@ SaleItem.belongsTo(Sale, { foreignKey: 'sale_id', as: 'sale' });
 Sale.hasMany(SalePayment, { foreignKey: 'sale_id', as: 'payments' });
 SalePayment.belongsTo(Sale, { foreignKey: 'sale_id', as: 'sale' });
 
+// Relaciones de gamificación
+LoyaltyMember.hasMany(PointsLedger, { foreignKey: 'member_id', as: 'ledger' });
+PointsLedger.belongsTo(LoyaltyMember, { foreignKey: 'member_id', as: 'member' });
+
 module.exports = {
   sequelize,
   User,
@@ -103,5 +112,8 @@ module.exports = {
   Sale,
   SaleItem,
   SalePayment,
-  Expense
+  Expense,
+  LoyaltyMember,
+  PointsLedger,
+  RewardsCatalog
 };

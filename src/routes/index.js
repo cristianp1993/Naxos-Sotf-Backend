@@ -23,6 +23,9 @@ const expensesRoutes = require('./expenses');
 // Rutas de product_flavors
 const productFlavorsRoutes = require('./productFlavors');
 
+// Rutas de gamificación / loyalty
+const loyaltyRoutes = require('./loyalty');
+
 // Exportar todas las rutas centralizadas
 module.exports = {
   auth: authRoutes,
@@ -39,5 +42,7 @@ module.exports = {
   menu: menuRoutes,
   expenses: expensesRoutes,
   // Product flavors routes
-  productFlavors: productFlavorsRoutes
+  productFlavors: productFlavorsRoutes,
+  // Gamificación / loyalty
+  loyalty: loyaltyRoutes
 };

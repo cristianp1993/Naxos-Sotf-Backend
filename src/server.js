@@ -78,7 +78,8 @@ app.get('/', (req, res) => {
       prices: '/api/prices',
       flavors: '/api/flavors',
       menu: '/api/menu',
-      expenses: '/api/expenses'
+      expenses: '/api/expenses',
+      loyalty: '/api/loyalty'
     }
   });
 });
@@ -104,6 +105,9 @@ app.get('/api/dashboard/stats', DashboardController.getStats);
 
 // Rutas de product flavors (debe estar en /api porque ya incluye /products en las rutas)
 app.use('/api/product-flavors', routes.productFlavors);
+
+// Rutas de gamificación / loyalty
+app.use('/api/loyalty', routes.loyalty);
 
 
 // Middleware para rutas no encontradas
