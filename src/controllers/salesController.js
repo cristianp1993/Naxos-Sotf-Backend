@@ -150,16 +150,12 @@ class SalesController {
       if (start_date || end_date) {
         where.opened_at = {};
         if (start_date) {
-          // 🔥 CORRECCIÓN: Crear rango de fecha completo para Colombia timezone
-          const startDate = new Date(start_date + 'T00:00:00-05:00');
-          const startDateUTC = new Date(startDate.getTime() + (5 * 60 * 60 * 1000)); // Convertir a UTC
-          where.opened_at[Op.gte] = startDateUTC;
+          // Midnight Colombia → UTC (new Date already handles -05:00 offset)
+          where.opened_at[Op.gte] = new Date(start_date + 'T00:00:00-05:00');
         }
         if (end_date) {
-          // 🔥 CORRECCIÓN: Incluir todo el día (23:59:59) en Colombia timezone
-          const endDate = new Date(end_date + 'T23:59:59-05:00');
-          const endDateUTC = new Date(endDate.getTime() + (5 * 60 * 60 * 1000)); // Convertir a UTC
-          where.opened_at[Op.lte] = endDateUTC;
+          // End of day Colombia → UTC
+          where.opened_at[Op.lte] = new Date(end_date + 'T23:59:59-05:00');
         }
       }
 
@@ -564,16 +560,14 @@ class SalesController {
       const cashier_id = req.user.user_id;
       const { location_id, observation, items, payments } = value;
 
-      // 🔥 SOLUCIÓN: Forzar hora Colombia en todas las fechas
-      const nowUTC = new Date();
-      const colombiaTime = new Date(nowUTC.getTime() - (5 * 60 * 60 * 1000)); // UTC-5
+      const now = new Date();
 
       const sale = await Sale.create({
         location_id,
         cashier_id,
         observation: observation || null,
         status: 'OPEN',
-        opened_at: colombiaTime,  // 🔥 Usar hora Colombia
+        opened_at: now,
         subtotal: 0,
         tax: 0,
         total: 0
@@ -655,7 +649,7 @@ class SalesController {
         method: methodMapToDb[p.method],
         amount: Number(p.amount),
         reference: p.reference || null,
-        paid_at: colombiaTime  // 🔥 Usar hora Colombia en pagos
+        paid_at: now
       }));
 
       await SalePayment.bulkCreate(paymentsPayload, { transaction: t });
@@ -665,7 +659,7 @@ class SalesController {
         tax,
         total,
         status: 'PAID',
-        paid_at: colombiaTime  // 🔥 Usar hora Colombia también en pago
+        paid_at: now
       }, { where: { sale_id: sale.sale_id }, transaction: t });
 
       await t.commit();

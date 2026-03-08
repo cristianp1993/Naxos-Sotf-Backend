@@ -40,7 +40,7 @@ class DashboardController {
             COUNT(*) as cantidad_ventas,
             COALESCE(SUM(total), 0) as total_ventas
           FROM naxos.sale
-          WHERE DATE(CONVERT_TZ(opened_at, '+00:00', '-05:00')) = :todayDate
+          WHERE DATE(opened_at AT TIME ZONE 'America/Bogota') = :todayDate
             AND status = 'PAID'
         `, { 
           replacements: { todayDate: todayDateString }
@@ -68,7 +68,7 @@ class DashboardController {
           JOIN naxos.sale_item si ON s.sale_id = si.sale_id
           JOIN naxos.product_variant pv ON si.variant_id = pv.variant_id
           JOIN naxos.product p ON pv.product_id = p.product_id
-          WHERE DATE(CONVERT_TZ(s.opened_at, '+00:00', '-05:00')) = :todayDate
+          WHERE DATE(s.opened_at AT TIME ZONE 'America/Bogota') = :todayDate
             AND s.status = 'PAID'
           GROUP BY p.product_id, p.name
           ORDER BY total_unidades DESC
@@ -103,7 +103,7 @@ class DashboardController {
           JOIN naxos.sale_item si ON s.sale_id = si.sale_id
           JOIN naxos.product_variant pv ON si.variant_id = pv.variant_id
           JOIN naxos.product p ON pv.product_id = p.product_id
-          WHERE DATE(CONVERT_TZ(s.opened_at, '+00:00', '-05:00')) = :todayDate
+          WHERE DATE(s.opened_at AT TIME ZONE 'America/Bogota') = :todayDate
             AND s.status = 'PAID'
           GROUP BY pv.variant_id, pv.variant_name, p.name
           ORDER BY total_unidades DESC
@@ -137,7 +137,7 @@ class DashboardController {
           FROM naxos.sale s
           JOIN naxos.sale_item si ON s.sale_id = si.sale_id
           JOIN naxos.flavor f ON si.flavor_id = f.flavor_id
-          WHERE DATE(CONVERT_TZ(s.opened_at, '+00:00', '-05:00')) = :todayDate
+          WHERE DATE(s.opened_at AT TIME ZONE 'America/Bogota') = :todayDate
             AND s.status = 'PAID'
             AND si.flavor_id IS NOT NULL
           GROUP BY f.flavor_id, f.name
