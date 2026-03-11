@@ -23,12 +23,36 @@ const TIMEZONE = 'America/Bogota';
 const LOCALE = 'es-CO';
 
 /**
- * Retorna un objeto Date con la hora actual.
- * NOTA: El parche en pg-timezone-patch.js garantiza que este Date
- * se serialice correctamente en Colombia al enviarse a PostgreSQL,
- * sin importar la timezone del servidor.
+ * Retorna la fecha/hora actual en Colombia como STRING con offset explícito.
+ * Formato: "2026-03-10T22:05:00.123-05:00"
+ *
+ * ¿Por qué string y no Date?
+ * - new Date() en un servidor UTC retorna hora UTC.
+ * - El driver pg serializa Date usando la timezone LOCAL del servidor.
+ * - En producción (UTC), eso envía "03:05:00+00:00" en vez de "22:05:00-05:00".
+ * - Un string con offset explícito -05:00 FUERZA a PostgreSQL a interpretar
+ *   la hora como Colombia, sin importar dónde corra el servidor.
+ * - Sequelize acepta strings para campos DataTypes.DATE sin problema.
  */
-const now = () => new Date();
+const now = () => {
+  const d = new Date();
+  const parts = {};
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(d).forEach(({ type, value }) => {
+    parts[type] = value;
+  });
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}:${parts.second}.${ms}-05:00`;
+};
 
 /**
  * Retorna la fecha actual en formato "YYYY-MM-DD" en zona horaria Colombia.
@@ -128,13 +152,14 @@ const toTimeString = (date) => {
  * Útil para debugging y logs de salud del sistema.
  */
 const getTimezoneInfo = () => {
-  const d = now();
+  const d = new Date();
   return {
     timezone_configured: TIMEZONE,
     process_tz: process.env.TZ || 'NOT SET',
     current_time_colombia: formatColombia(d),
     current_date_colombia: todayString(),
-    current_iso: d.toISOString(),
+    now_returns: now(),
+    current_iso_utc: d.toISOString(),
     timezone_offset_minutes: d.getTimezoneOffset(),
   };
 };
