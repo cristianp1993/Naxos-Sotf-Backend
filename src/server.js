@@ -51,11 +51,13 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Rutas de salud
 app.get('/health', (req, res) => {
+  const { getTimezoneInfo } = require('./utils/dateHelper');
   res.status(200).json({
     status: 'OK',
     message: 'Sistema Naxos POS - Backend funcionando correctamente',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.0.0',
+    timezone: getTimezoneInfo()
   });
 });
 

@@ -1,6 +1,7 @@
 const { sequelize, Sale, SaleItem, SalePayment, Expense, Variant, Product } = require('../models');
 const { Op } = require('sequelize');
 const Joi = require('joi');
+const { startOfDay, endOfDay } = require('../utils/dateHelper');
 
 // Esquema de validación para fechas
 const dateRangeSchema = Joi.object({
@@ -190,9 +191,8 @@ class ReportsController {
         });
       }
 
-      // Create date range in Colombia timezone
-      const startDate = new Date(start_date + 'T00:00:00-05:00');
-      const endDate = new Date(end_date + 'T23:59:59-05:00');
+      const startDate = startOfDay(start_date);
+      const endDate = endOfDay(end_date);
       
       console.log('🔍 Reporte - Rango fechas Colombia:', {
         start_date,
@@ -386,9 +386,8 @@ class ReportsController {
         });
       }
 
-      // Create date range in Colombia timezone
-      const startDate = new Date(start_date + 'T00:00:00-05:00');
-      const endDate = new Date(end_date + 'T23:59:59-05:00');
+      const startDate = startOfDay(start_date);
+      const endDate = endOfDay(end_date);
       
       console.log('🔍 Download Cash Flow - Rango fechas Colombia:', {
         start_date,
@@ -569,9 +568,8 @@ class ReportsController {
         });
       }
 
-      // Create date range in Colombia timezone
-      const startDate = new Date(start_date + 'T00:00:00-05:00');
-      const endDate = new Date(end_date + 'T23:59:59-05:00');
+      const startDate = startOfDay(start_date);
+      const endDate = endOfDay(end_date);
       
       console.log('🔍 Sales Summary - Rango fechas Colombia:', {
         start_date,
@@ -835,9 +833,8 @@ class ReportsController {
         });
       }
 
-      // Create date range in Colombia timezone
-      const startDate = new Date(start_date + 'T00:00:00-05:00');
-      const endDate = new Date(end_date + 'T23:59:59-05:00');
+      const startDate = startOfDay(start_date);
+      const endDate = endOfDay(end_date);
       
       console.log('🔍 Download Sales Summary - Rango fechas Colombia:', {
         start_date,

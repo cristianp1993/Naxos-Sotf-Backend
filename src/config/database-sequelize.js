@@ -56,6 +56,7 @@ if (process.env.DATABASE_URL) {
     host: hostname,
     port,
     dialect: "postgres",
+    timezone: "America/Bogota",
     dialectOptions: {
       // ✅ SSL solo si corresponde
       ...(useSSL
@@ -102,6 +103,7 @@ if (process.env.DATABASE_URL) {
     host: DB_HOST,
     port: DB_PORT,
     dialect: "postgres",
+    timezone: "America/Bogota",
     logging: false,
     ...(isProduction
       ? {
@@ -137,7 +139,13 @@ if (process.env.DATABASE_URL) {
 const testConnection = async () => {
   try {
     await sequelize.authenticate();
+    // Forzar timezone en la sesión Sequelize
+    await sequelize.query("SET timezone = 'America/Bogota'");
+    const [tzResult] = await sequelize.query("SHOW timezone");
     console.log("✅ Conexión Sequelize establecida con PostgreSQL");
+    console.log(`🕐 Timezone de la sesión DB: ${tzResult[0]?.TimeZone || tzResult[0]?.timezone || 'desconocido'}`);
+    console.log(`🕐 Timezone del proceso Node.js: ${process.env.TZ || 'no configurado'}`);
+    console.log(`🕐 Hora actual del servidor (Colombia): ${new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' })}`);
     return true;
   } catch (error) {
     console.error("❌ Error conectando con Sequelize:", error);

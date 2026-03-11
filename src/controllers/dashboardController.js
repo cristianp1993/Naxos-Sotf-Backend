@@ -1,17 +1,15 @@
 const { sequelize, Flavor, Sale, SaleItem, ProductVariant, Product } = require('../models');
 const { Op } = require('sequelize');
+const { todayString } = require('../utils/dateHelper');
 
 class DashboardController {
   static async getStats(req, res) {
     try {
-      console.log('🔍 Dashboard: Iniciando获取 de estadísticas');
+      console.log('🔍 Dashboard: Iniciando obtención de estadísticas');
       
-      // Get today's date in Colombia timezone (UTC-5)
-      const now = new Date();
-      const todayColombia = new Date(now.getTime() - (5 * 60 * 60 * 1000)); // Restar 5 horas para UTC-5
-      const todayDateString = todayColombia.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      // Fecha de hoy en Colombia (TZ=America/Bogota configurado globalmente)
+      const todayDateString = todayString();
       
-      console.log('🔍 Dashboard - Fecha actual UTC:', now.toISOString());
       console.log('🔍 Dashboard - Fecha Colombia (YYYY-MM-DD):', todayDateString);
       
       // 1. Total de sabores activos

@@ -15,7 +15,9 @@ const pool = new Pool({
 
 // Event listeners para manejo de errores
 pool.on('connect', (client) => {
-  console.log('Nueva conexión establecida con la base de datos');
+  // Forzar zona horaria Colombia en cada conexión del pool
+  client.query("SET timezone = 'America/Bogota'");
+  console.log('Nueva conexión establecida con la base de datos (TZ: America/Bogota)');
 });
 
 pool.on('error', (err) => {
