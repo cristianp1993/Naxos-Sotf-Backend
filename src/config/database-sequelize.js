@@ -1,6 +1,3 @@
-// Parche de timezone Colombia - DEBE ir antes de cualquier uso de pg
-require('./pg-timezone-patch');
-
 const { Sequelize } = require("sequelize");
 require("dotenv").config();
 
@@ -59,12 +56,6 @@ if (process.env.DATABASE_URL) {
     host: hostname,
     port,
     dialect: "postgres",
-    timezone: "-05:00",
-    hooks: {
-      afterConnect: async (connection) => {
-        await connection.query("SET timezone = 'America/Bogota'");
-      }
-    },
     dialectOptions: {
       // ✅ SSL solo si corresponde
       ...(useSSL
@@ -111,12 +102,6 @@ if (process.env.DATABASE_URL) {
     host: DB_HOST,
     port: DB_PORT,
     dialect: "postgres",
-    timezone: "-05:00",
-    hooks: {
-      afterConnect: async (connection) => {
-        await connection.query("SET timezone = 'America/Bogota'");
-      }
-    },
     logging: false,
     ...(isProduction
       ? {

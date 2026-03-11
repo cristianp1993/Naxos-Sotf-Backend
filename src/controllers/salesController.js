@@ -2,7 +2,6 @@ const Joi = require('joi');
 const { sequelize, Sale, SaleItem, SalePayment, Variant, Flavor } = require('../models');
 const { Op } = require('sequelize');
 const { startOfDay, endOfDay } = require('../utils/dateHelper');
-const NOW_COL = () => sequelize.literal('NOW()');
 
 const saleSchema = Joi.object({
   location_id: Joi.number().integer().positive().optional(),
@@ -437,7 +436,7 @@ class SalesController {
       if (sale.status === 'PAID') return res.status(400).json({ error: 'Venta pagada', message: 'No se puede cancelar una venta que ya fue pagada' });
 
       await Sale.update(
-        { status: 'CANCELLED', cancelled_at: NOW_COL(), cancellation_reason: reason || 'Cancelada por el cajero' },
+        { status: 'CANCELLED', cancelled_at: new Date(), cancellation_reason: reason || 'Cancelada por el cajero' },
         { where: { sale_id: saleId } }
       );
 
@@ -535,7 +534,7 @@ class SalesController {
         method: methodMapToDb[value.method],
         amount: Number(value.amount),
         reference: value.reference || null,
-        paid_at: NOW_COL()
+        paid_at: new Date()
       });
 
       const json = payment.toJSON();
@@ -645,7 +644,7 @@ class SalesController {
         method: methodMapToDb[p.method],
         amount: Number(p.amount),
         reference: p.reference || null,
-        paid_at: NOW_COL()
+        paid_at: new Date()
       }));
 
       await SalePayment.bulkCreate(paymentsPayload, { transaction: t });
@@ -655,7 +654,7 @@ class SalesController {
         tax,
         total,
         status: 'PAID',
-        paid_at: NOW_COL()
+        paid_at: new Date()
       }, { where: { sale_id: sale.sale_id }, transaction: t });
 
       await t.commit();
@@ -814,7 +813,7 @@ class SalesController {
         method: methodMapToDb[p.method],
         amount: Number(p.amount),
         reference: p.reference || null,
-        paid_at: NOW_COL()
+        paid_at: new Date()
       }));
 
       await SalePayment.bulkCreate(paymentsPayload, { transaction: t });
@@ -829,7 +828,7 @@ class SalesController {
         tax,
         total,
         status: 'PAID',
-        paid_at: NOW_COL()
+        paid_at: new Date()
       }, { where: { sale_id: saleId }, transaction: t });
 
       await t.commit();
