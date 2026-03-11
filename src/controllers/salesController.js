@@ -1,7 +1,8 @@
 const Joi = require('joi');
 const { sequelize, Sale, SaleItem, SalePayment, Variant, Flavor } = require('../models');
 const { Op } = require('sequelize');
-const { now, startOfDay, endOfDay } = require('../utils/dateHelper');
+const { startOfDay, endOfDay } = require('../utils/dateHelper');
+const NOW_COL = () => sequelize.literal('NOW()');
 
 const saleSchema = Joi.object({
   location_id: Joi.number().integer().positive().optional(),
@@ -101,7 +102,6 @@ class SalesController {
         cashier_id,
         observation: observation || null,
         status: 'OPEN',
-        opened_at: now(),
         subtotal: 0,
         tax: 0,
         total: 0
@@ -437,7 +437,7 @@ class SalesController {
       if (sale.status === 'PAID') return res.status(400).json({ error: 'Venta pagada', message: 'No se puede cancelar una venta que ya fue pagada' });
 
       await Sale.update(
-        { status: 'CANCELLED', cancelled_at: now(), cancellation_reason: reason || 'Cancelada por el cajero' },
+        { status: 'CANCELLED', cancelled_at: NOW_COL(), cancellation_reason: reason || 'Cancelada por el cajero' },
         { where: { sale_id: saleId } }
       );
 
@@ -535,7 +535,7 @@ class SalesController {
         method: methodMapToDb[value.method],
         amount: Number(value.amount),
         reference: value.reference || null,
-        paid_at: now()
+        paid_at: NOW_COL()
       });
 
       const json = payment.toJSON();
@@ -559,14 +559,11 @@ class SalesController {
       const cashier_id = req.user.user_id;
       const { location_id, observation, items, payments } = value;
 
-      const ahora = now();
-
       const sale = await Sale.create({
         location_id,
         cashier_id,
         observation: observation || null,
         status: 'OPEN',
-        opened_at: ahora,
         subtotal: 0,
         tax: 0,
         total: 0
@@ -648,7 +645,7 @@ class SalesController {
         method: methodMapToDb[p.method],
         amount: Number(p.amount),
         reference: p.reference || null,
-        paid_at: ahora
+        paid_at: NOW_COL()
       }));
 
       await SalePayment.bulkCreate(paymentsPayload, { transaction: t });
@@ -658,7 +655,7 @@ class SalesController {
         tax,
         total,
         status: 'PAID',
-        paid_at: ahora
+        paid_at: NOW_COL()
       }, { where: { sale_id: sale.sale_id }, transaction: t });
 
       await t.commit();
@@ -812,13 +809,12 @@ class SalesController {
       await SalePayment.destroy({ where: { sale_id: saleId }, transaction: t });
 
       // Crear nuevos pagos
-      const ahoraUpdate = now();
       const paymentsPayload = payments.map(p => ({
         sale_id: saleId,
         method: methodMapToDb[p.method],
         amount: Number(p.amount),
         reference: p.reference || null,
-        paid_at: ahoraUpdate
+        paid_at: NOW_COL()
       }));
 
       await SalePayment.bulkCreate(paymentsPayload, { transaction: t });
@@ -833,7 +829,7 @@ class SalesController {
         tax,
         total,
         status: 'PAID',
-        paid_at: ahoraUpdate
+        paid_at: NOW_COL()
       }, { where: { sale_id: saleId }, transaction: t });
 
       await t.commit();
