@@ -78,6 +78,9 @@ if (process.env.DATABASE_URL) {
       min: 0,
       acquire: 30000,
       idle: 10000,
+      afterConnect: (conn, done) => {
+        conn.query("SET timezone = 'America/Bogota'", (err) => done(err, conn));
+      },
     },
     define: {
       timestamps: true,
@@ -122,6 +125,9 @@ if (process.env.DATABASE_URL) {
       min: 0,
       acquire: 30000,
       idle: 10000,
+      afterConnect: (conn, done) => {
+        conn.query("SET timezone = 'America/Bogota'", (err) => done(err, conn));
+      },
     },
     define: {
       timestamps: true,
