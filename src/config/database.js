@@ -1,3 +1,6 @@
+// Parche de timezone Colombia - DEBE ir antes de cualquier uso de pg
+require('./pg-timezone-patch');
+
 const { Pool } = require('pg');
 require('dotenv').config();
 

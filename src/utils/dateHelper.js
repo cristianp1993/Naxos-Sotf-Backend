@@ -24,20 +24,27 @@ const LOCALE = 'es-CO';
 
 /**
  * Retorna un objeto Date con la hora actual.
- * Con TZ=America/Bogota configurado globalmente, new Date() ya opera en Colombia.
- * Esta función centraliza la creación para facilitar testing y auditoría.
+ * NOTA: El parche en pg-timezone-patch.js garantiza que este Date
+ * se serialice correctamente en Colombia al enviarse a PostgreSQL,
+ * sin importar la timezone del servidor.
  */
 const now = () => new Date();
 
 /**
  * Retorna la fecha actual en formato "YYYY-MM-DD" en zona horaria Colombia.
+ * Usa Intl.DateTimeFormat para NO depender de process.env.TZ.
  */
 const todayString = () => {
-  const d = now();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const parts = {};
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date()).forEach(({ type, value }) => {
+    parts[type] = value;
+  });
+  return `${parts.year}-${parts.month}-${parts.day}`;
 };
 
 /**
@@ -80,27 +87,40 @@ const toColombiaISO = (date) => {
 
 /**
  * Retorna la fecha "YYYY-MM-DD" de un Date en zona horaria Colombia.
+ * Usa Intl para NO depender de process.env.TZ.
  */
 const toDateString = (date) => {
   if (!date) return null;
-  const d = new Date(date);
-  // Con TZ=America/Bogota, getFullYear/getMonth/getDate ya son Colombia
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const parts = {};
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(date)).forEach(({ type, value }) => {
+    parts[type] = value;
+  });
+  return `${parts.year}-${parts.month}-${parts.day}`;
 };
 
 /**
  * Retorna la hora "HH:mm:ss" de un Date en zona horaria Colombia.
+ * Usa Intl para NO depender de process.env.TZ.
  */
 const toTimeString = (date) => {
   if (!date) return null;
-  const d = new Date(date);
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  const seconds = String(d.getSeconds()).padStart(2, '0');
-  return `${hours}:${minutes}:${seconds}`;
+  const parts = {};
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(date)).forEach(({ type, value }) => {
+    parts[type] = value;
+  });
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  return `${hour}:${parts.minute}:${parts.second}`;
 };
 
 /**
