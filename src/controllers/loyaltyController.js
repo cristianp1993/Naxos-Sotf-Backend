@@ -51,6 +51,18 @@ const searchSchema = Joi.object({
     .messages({ 'any.required': 'El término de búsqueda es obligatorio' }),
 });
 
+const listMembersSchema = Joi.object({
+  q: Joi.string().trim().min(1).max(100).allow(null, '').optional(),
+});
+
+const assignPointsSchema = Joi.object({
+  member_id: Joi.number().integer().positive().required()
+    .messages({ 'any.required': 'El ID del miembro es obligatorio' }),
+  points_to_assign: Joi.number().integer().positive().required()
+    .messages({ 'any.required': 'La cantidad de puntos a asignar es obligatoria' }),
+  description: Joi.string().trim().max(255).allow(null, '').optional(),
+});
+
 // ── Helpers ─────────────────────────────────────────────────────────
 
 /** Sanitiza un string dejando solo dígitos */
@@ -410,6 +422,109 @@ const LoyaltyController = {
       return res.status(500).json({
         error: 'Error interno',
         message: 'No se pudo redimir el premio. Intenta nuevamente.',
+      });
+    }
+  },
+
+  /**
+   * GET /members (ADMIN protegida)
+   * Lista todos los miembros activos ordenados por puntos DESC.
+   * Acepta query opcional ?q= para filtrar por nombre, teléfono o cédula.
+   */
+  async listMembers(req, res) {
+    try {
+      const { error, value } = listMembersSchema.validate(req.query, { abortEarly: false });
+      if (error) {
+        return res.status(400).json({
+          error: 'Error de validación',
+          details: error.details.map(d => d.message),
+        });
+      }
+
+      const q = (value.q || '').trim();
+
+      const whereClause = { is_active: true };
+      if (q) {
+        whereClause[Op.or] = [
+          { full_name: { [Op.iLike]: `%${q}%` } },
+          { phone_number: { [Op.iLike]: `%${q}%` } },
+          { document_id: { [Op.iLike]: `%${q}%` } },
+        ];
+      }
+
+      const members = await LoyaltyMember.findAll({
+        where: whereClause,
+        attributes: ['id', 'document_id', 'full_name', 'phone_number', 'points_balance'],
+        order: [['points_balance', 'DESC']],
+        limit: 200,
+      });
+
+      return res.status(200).json({ members });
+    } catch (err) {
+      console.error('Error en loyalty/members:', err);
+      return res.status(500).json({
+        error: 'Error interno',
+        message: 'No se pudo obtener la lista de miembros.',
+      });
+    }
+  },
+
+  /**
+   * POST /assign-points (ADMIN protegida)
+   * Asigna directamente una cantidad entera de puntos a un miembro.
+   * Los puntos se suman al saldo actual.
+   */
+  async assignPoints(req, res) {
+    try {
+      const { error, value } = assignPointsSchema.validate(req.body, { abortEarly: false });
+      if (error) {
+        return res.status(400).json({
+          error: 'Error de validación',
+          details: error.details.map(d => d.message),
+        });
+      }
+
+      const { member_id, points_to_assign, description } = value;
+
+      const result = await sequelize.transaction(async (t) => {
+        const member = await LoyaltyMember.findOne({
+          where: { id: member_id, is_active: true },
+          lock: t.LOCK.UPDATE,
+          transaction: t,
+        });
+
+        if (!member) {
+          throw { status: 404, message: 'Miembro no encontrado o inactivo.' };
+        }
+
+        member.points_balance += points_to_assign;
+        await member.save({ transaction: t });
+
+        const ledgerEntry = await PointsLedger.create({
+          member_id: member.id,
+          transaction_type: 'EARN',
+          points_amount: points_to_assign,
+          reference_id: null,
+          description: description || `Asignación manual: ${points_to_assign} puntos`,
+        }, { transaction: t });
+
+        return { member, ledgerEntry };
+      });
+
+      return res.status(200).json({
+        message: `¡Se asignaron ${points_to_assign} puntos exitosamente a ${result.member.full_name}!`,
+        points_added: points_to_assign,
+        new_balance: result.member.points_balance,
+        transaction_id: result.ledgerEntry.id,
+      });
+    } catch (err) {
+      if (err.status) {
+        return res.status(err.status).json({ error: err.message });
+      }
+      console.error('Error en loyalty/assign-points:', err);
+      return res.status(500).json({
+        error: 'Error interno',
+        message: 'No se pudieron asignar los puntos. Intenta nuevamente.',
       });
     }
   },
