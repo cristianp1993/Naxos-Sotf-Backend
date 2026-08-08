@@ -192,12 +192,9 @@ const deleteProduct = async (req, res) => {
 // Obtener categorías para el selector
 const getCategories = async (req, res) => {
   try {
-    console.log('🔍 Ejecutando getCategories...');
     const categories = await Category.findAll({
       order: [['name', 'ASC']]
     });
-    console.log('📂 Categorías encontradas:', categories.length);
-    console.log('📂 Categorías data:', JSON.stringify(categories, null, 2));
     res.json({ success: true, data: categories });
   } catch (error) {
     console.error('❌ Error al obtener categorías:', error);

@@ -22,6 +22,13 @@ const stockUpdateSchema = Joi.object({
   qty_on_hand: Joi.number().precision(3).min(0).required()
 });
 
+const supplySchema = Joi.object({
+  location_id: Joi.number().integer().positive().required(),
+  item_name: Joi.string().min(2).max(100).required(),
+  quantity: Joi.number().precision(3).positive().required(),
+  reason: Joi.string().max(500).optional()
+});
+
 class InventoryController {
   
   // ==================== UBICACIONES ====================
@@ -45,8 +52,9 @@ class InventoryController {
       );
 
       res.status(201).json({
+        success: true,
         message: 'Ubicación creada exitosamente',
-        location: result.rows[0]
+        data: result.rows[0]
       });
 
     } catch (error) {
@@ -72,8 +80,9 @@ class InventoryController {
       );
 
       res.status(200).json({
+        success: true,
         message: 'Ubicaciones obtenidas exitosamente',
-        locations: result.rows
+        data: result.rows
       });
 
     } catch (error) {
@@ -109,14 +118,15 @@ class InventoryController {
         JOIN naxos.inventory_location loc ON stock.location_id = loc.location_id
         JOIN naxos.product_variant pv ON stock.variant_id = pv.variant_id
         JOIN naxos.product p ON pv.product_id = p.product_id
-        JOIN naxos.product_category c ON p.category_id = c.category_id
+        LEFT JOIN naxos.product_category c ON p.category_id = c.category_id
         WHERE stock.location_id = $1
         ORDER BY p.name, pv.variant_name
       `, [locationId]);
 
       res.status(200).json({
+        success: true,
         message: 'Stock obtenido exitosamente',
-        stock: result.rows
+        data: result.rows
       });
 
     } catch (error) {
@@ -148,8 +158,9 @@ class InventoryController {
       `, [variantId]);
 
       res.status(200).json({
+        success: true,
         message: 'Stock de variante obtenido exitosamente',
-        stock: result.rows
+        data: result.rows
       });
 
     } catch (error) {
@@ -210,8 +221,9 @@ class InventoryController {
       `, [location_id, variant_id, qty_on_hand]);
 
       res.status(200).json({
+        success: true,
         message: 'Stock actualizado exitosamente',
-        stock: result.rows[0]
+        data: result.rows[0]
       });
 
     } catch (error) {
@@ -271,11 +283,12 @@ class InventoryController {
         RETURNING *
       `, [location_id, variant_id, movement_type, qty_change, reason, ref_sale_id, created_by]);
 
-      // El trigger automáticamente actualizará el stock
+      // El trigger de la BD actualiza el stock automaticamente
 
       res.status(201).json({
+        success: true,
         message: 'Movimiento registrado exitosamente',
-        movement: result.rows[0]
+        data: result.rows[0]
       });
 
     } catch (error) {
@@ -373,8 +386,9 @@ class InventoryController {
       const total = parseInt(countResult.rows[0].total);
 
       res.status(200).json({
+        success: true,
         message: 'Historial de movimientos obtenido exitosamente',
-        movements: result.rows,
+        data: result.rows,
         pagination: {
           current_page: parseInt(page),
           per_page: parseInt(limit),
@@ -429,8 +443,9 @@ class InventoryController {
       `, params);
 
       res.status(200).json({
+        success: true,
         message: 'Productos con stock bajo obtenidos exitosamente',
-        low_stock: result.rows,
+        data: result.rows,
         threshold: parseInt(threshold)
       });
 
@@ -475,8 +490,9 @@ class InventoryController {
       `, params);
 
       res.status(200).json({
+        success: true,
         message: 'Resumen de inventario obtenido exitosamente',
-        summary: result.rows
+        data: result.rows
       });
 
     } catch (error) {
@@ -484,6 +500,124 @@ class InventoryController {
       res.status(500).json({
         error: 'Error interno del servidor',
         message: 'No se pudo obtener el resumen de inventario'
+      });
+    }
+  }
+
+  // ==================== INGRESO DE INSUMOS ====================
+
+  // Registra un ingreso de inventario por nombre de insumo.
+  // Si el producto/variante no existe, lo crea automáticamente.
+  static async createSupply(req, res) {
+    try {
+      const { error, value } = supplySchema.validate(req.body);
+      if (error) {
+        return res.status(400).json({
+          error: 'Datos de entrada inválidos',
+          message: error.details[0].message
+        });
+      }
+
+      const { location_id, item_name, quantity, reason } = value;
+      const created_by = req.user.user_id;
+
+      // Extraer onzas del nombre si el texto contiene un numero seguido de oz/onzas
+      const ouncesMatch = item_name.match(/(\d+(?:\.\d+)?)\s?(?:oz|onzas?)/i);
+      const ounces = ouncesMatch ? parseFloat(ouncesMatch[1]) : null;
+
+      // Verificar que la ubicación existe
+      const locationResult = await query(
+        'SELECT location_id FROM naxos.inventory_location WHERE location_id = $1 AND is_active = true',
+        [location_id]
+      );
+
+      if (locationResult.rows.length === 0) {
+        return res.status(404).json({
+          error: 'Ubicación no encontrada',
+          message: 'La ubicación especificada no existe o está inactiva'
+        });
+      }
+
+      // Buscar producto/variante existente que coincida con el nombre
+      let variantId = null;
+
+      if (ounces) {
+        const variantResult = await query(`
+          SELECT pv.variant_id
+          FROM naxos.product p
+          JOIN naxos.product_variant pv ON p.product_id = pv.product_id
+          WHERE p.name ILIKE $1
+            AND pv.ounces = $2
+            AND pv.is_active = true
+          LIMIT 1
+        `, [`%${item_name}%`, ounces]);
+        if (variantResult.rows.length > 0) {
+          variantId = variantResult.rows[0].variant_id;
+        }
+      } else {
+        const variantResult = await query(`
+          SELECT pv.variant_id
+          FROM naxos.product p
+          JOIN naxos.product_variant pv ON p.product_id = pv.product_id
+          WHERE p.name ILIKE $1
+            AND pv.is_active = true
+          LIMIT 1
+        `, [`%${item_name}%`]);
+        if (variantResult.rows.length > 0) {
+          variantId = variantResult.rows[0].variant_id;
+        }
+      }
+
+      // Si no existe, crear categoria, producto y variante
+      if (!variantId) {
+        const categoryResult = await query(
+          'SELECT category_id FROM naxos.product_category WHERE name ILIKE $1 LIMIT 1',
+          ['%insumos%']
+        );
+
+        let categoryId = categoryResult.rows[0]?.category_id;
+        if (!categoryId) {
+          const newCategory = await query(
+            'INSERT INTO naxos.product_category (name) VALUES ($1) RETURNING category_id',
+            ['Insumos']
+          );
+          categoryId = newCategory.rows[0].category_id;
+        }
+
+        const productResult = await query(
+          'INSERT INTO naxos.product (category_id, name, is_active, created_at, updated_at) VALUES ($1, $2, true, NOW(), NOW()) RETURNING product_id',
+          [categoryId, item_name]
+        );
+        const productId = productResult.rows[0].product_id;
+
+        const newVariant = await query(
+          'INSERT INTO naxos.product_variant (product_id, variant_name, ounces, toppings, price, is_active, created_at, updated_at) VALUES ($1, $2, $3, 0, 0, true, NOW(), NOW()) RETURNING variant_id',
+          [productId, item_name, ounces]
+        );
+        variantId = newVariant.rows[0].variant_id;
+      }
+
+      const movementResult = await query(`
+        INSERT INTO naxos.inventory_movement
+        (location_id, variant_id, movement_type, qty_change, reason, created_by)
+        VALUES ($1, $2, 'PURCHASE', $3, $4, $5)
+        RETURNING *
+      `, [location_id, variantId, quantity, reason || `Ingreso de ${item_name}`, created_by]);
+
+      // El trigger de la BD actualiza el stock automaticamente
+
+      res.status(201).json({
+        success: true,
+        message: 'Ingreso de inventario registrado exitosamente',
+        data: movementResult.rows[0]
+      });
+
+    } catch (error) {
+      console.error('Error registrando ingreso de inventario:', error);
+      res.status(500).json({
+        error: 'Error interno del servidor',
+        message: 'No se pudo registrar el ingreso de inventario',
+        details: error.message
       });
     }
   }

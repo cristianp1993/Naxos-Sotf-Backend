@@ -17,6 +17,7 @@ router.put('/stock', requireAdmin, InventoryController.updateStock);
 
 // Movimientos
 router.post('/movements', requireAdmin, InventoryController.createMovement);
+router.post('/supply', requireAdmin, InventoryController.createSupply);
 router.get('/movements/history', InventoryController.getMovementHistory);
 
 // Reportes

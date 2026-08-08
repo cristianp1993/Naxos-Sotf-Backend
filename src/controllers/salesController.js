@@ -1,6 +1,6 @@
 const Joi = require('joi');
 const { sequelize, Sale, SaleItem, SalePayment, Variant, Flavor } = require('../models');
-const { Op } = require('sequelize');
+const { Op, QueryTypes } = require('sequelize');
 const { startOfDay, endOfDay } = require('../utils/dateHelper');
 
 const saleSchema = Joi.object({
@@ -659,6 +659,83 @@ class SalesController {
 
       await t.commit();
 
+      // Descuenta del inventario la cantidad vendida de cada item.
+      // Tambien descuenta el plastico/vaso correspondiente si existe.
+      // Se ejecuta fuera de la transaccion de venta para no afectarla si el inventario falla.
+      // El trigger de la BD actualiza el stock automaticamente al insertar el movimiento.
+      const inventoryWarnings = [];
+
+      try {
+        if (location_id) {
+          for (const item of itemsPayload) {
+            const soldVariant = variantById.get(item.variant_id);
+            const requestedQty = Number(item.quantity);
+
+            // 1) Descontar siempre la variante vendida del inventario
+            try {
+              await sequelize.query(`
+                INSERT INTO naxos.inventory_movement
+                (location_id, variant_id, movement_type, qty_change, reason, ref_sale_id, created_by)
+                VALUES (:location_id, :variant_id, 'SALE', :qty_change, :reason, :sale_id, :created_by)
+              `, {
+                replacements: {
+                  location_id,
+                  variant_id: item.variant_id,
+                  qty_change: -requestedQty,
+                  reason: `Venta #${sale.sale_id} - ${soldVariant?.variant_name || 'variante'} x${requestedQty}`,
+                  sale_id: sale.sale_id,
+                  created_by: cashier_id
+                },
+                type: QueryTypes.INSERT
+              });
+            } catch (invError) {
+              inventoryWarnings.push(`No se pudo descontar el producto vendido del inventario: ${invError.message}`);
+            }
+
+            // 2) Si la variante tiene onzas, buscar y descontar el plastico/vaso correspondiente
+            if (!soldVariant || !soldVariant.ounces) continue;
+
+            const [supplyVariant] = await sequelize.query(`
+              SELECT pv.variant_id, pv.variant_name, pv.ounces, p.name as product_name
+              FROM naxos.product p
+              JOIN naxos.product_variant pv ON p.product_id = pv.product_id
+              WHERE (p.name ILIKE '%plástico%' OR p.name ILIKE '%plastic%' OR p.name ILIKE '%vaso%')
+                AND pv.ounces = :ounces
+                AND pv.is_active = true
+                AND pv.variant_id != :sold_variant_id
+              LIMIT 1
+            `, {
+              replacements: { ounces: soldVariant.ounces, sold_variant_id: item.variant_id },
+              type: QueryTypes.SELECT
+            });
+
+            if (!supplyVariant) continue;
+
+            try {
+              await sequelize.query(`
+                INSERT INTO naxos.inventory_movement
+                (location_id, variant_id, movement_type, qty_change, reason, ref_sale_id, created_by)
+                VALUES (:location_id, :variant_id, 'SALE', :qty_change, :reason, :sale_id, :created_by)
+              `, {
+                replacements: {
+                  location_id,
+                  variant_id: supplyVariant.variant_id,
+                  qty_change: -requestedQty,
+                  reason: `Venta #${sale.sale_id} - descuento ${supplyVariant.product_name} ${soldVariant.ounces} oz`,
+                  sale_id: sale.sale_id,
+                  created_by: cashier_id
+                },
+                type: QueryTypes.INSERT
+              });
+            } catch (invError) {
+              inventoryWarnings.push(`No se pudo descontar ${supplyVariant.product_name} ${supplyVariant.variant_name}: ${invError.message}`);
+            }
+          }
+        }
+      } catch (inventoryError) {
+        inventoryWarnings.push('Error al actualizar inventario: ' + inventoryError.message);
+      }
+
       const fullSale = await Sale.findByPk(sale.sale_id, {
         include: [
           { model: SaleItem, as: 'items' },
@@ -674,7 +751,11 @@ class SalesController {
         }));
       }
 
-      return res.status(201).json({ message: 'Venta creada exitosamente', sale: json });
+      return res.status(201).json({
+        message: 'Venta creada exitosamente',
+        sale: json,
+        inventory_warnings: inventoryWarnings
+      });
     } catch (error) {
       await t.rollback();
       return res.status(500).json({ error: 'Error interno del servidor', message: 'No se pudo crear la venta', details: error.message });
