@@ -175,48 +175,26 @@ const syncModels = async () => {
 };
 
 /**
- * Ejecuta una query SQL usando la conexion de Sequelize.
- * Mantiene compatibilidad con la API de pg: { rows, rowCount }.
+ * Ejecuta SQL crudo sobre la conexion unica de Sequelize.
+ * Acepta parametros posicionales estilo pg ($1, $2, ...) via bind y
+ * devuelve siempre { rows, rowCount } para mantener compatibilidad
+ * con el codigo que antes usaba el pool de pg directamente.
  */
-const query = async (sql, replacements = []) => {
+const query = async (sql, params = []) => {
   const start = Date.now();
   try {
-    const firstWord = sql.trim().split(/\s+/)[0].toLowerCase();
-    const hasReturning = /RETURNING\s+/i.test(sql);
-
-    let type = QueryTypes.RAW;
-    let expectRows = false;
-
-    if (firstWord === "select" || hasReturning) {
-      type = QueryTypes.SELECT;
-      expectRows = true;
-    } else if (firstWord === "insert") {
-      type = QueryTypes.INSERT;
-    } else if (firstWord === "update") {
-      type = QueryTypes.UPDATE;
-    } else if (firstWord === "delete") {
-      type = QueryTypes.DELETE;
+    const options = { type: QueryTypes.SELECT, raw: true };
+    if (Array.isArray(params) && params.length > 0) {
+      // Sequelize rechaza valores undefined en bind, pg los tomaba como NULL
+      options.bind = params.map((valor) => (valor === undefined ? null : valor));
     }
 
-    const [results, metadata] = await sequelize.query(sql, {
-      replacements,
-      type,
-      raw: true,
-    });
-
+    const results = await sequelize.query(sql, options);
+    const rows = Array.isArray(results) ? results : [];
     const duration = Date.now() - start;
-    let rowCount;
 
-    if (expectRows) {
-      const rows = results || [];
-      rowCount = rows.length;
-      console.log("Query ejecutada", { text: sql, duration, rows: rowCount });
-      return { rows, rowCount };
-    }
-
-    rowCount = typeof metadata === "number" ? metadata : (metadata?.rowCount || 0);
-    console.log("Query ejecutada", { text: sql, duration, rows: rowCount });
-    return { rows: [], rowCount };
+    console.log("Query ejecutada", { text: sql, duration, rows: rows.length });
+    return { rows, rowCount: rows.length };
 
   } catch (error) {
     console.error("Error ejecutando query", { text: sql, error: error.message });
