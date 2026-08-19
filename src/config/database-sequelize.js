@@ -1,4 +1,4 @@
-const { Sequelize } = require("sequelize");
+const { Sequelize, QueryTypes } = require("sequelize");
 require("dotenv").config();
 
 const isProduction = process.env.NODE_ENV === "production";
@@ -174,8 +174,59 @@ const syncModels = async () => {
   }
 };
 
+/**
+ * Ejecuta una query SQL usando la conexion de Sequelize.
+ * Mantiene compatibilidad con la API de pg: { rows, rowCount }.
+ */
+const query = async (sql, replacements = []) => {
+  const start = Date.now();
+  try {
+    const firstWord = sql.trim().split(/\s+/)[0].toLowerCase();
+    const hasReturning = /RETURNING\s+/i.test(sql);
+
+    let type = QueryTypes.RAW;
+    let expectRows = false;
+
+    if (firstWord === "select" || hasReturning) {
+      type = QueryTypes.SELECT;
+      expectRows = true;
+    } else if (firstWord === "insert") {
+      type = QueryTypes.INSERT;
+    } else if (firstWord === "update") {
+      type = QueryTypes.UPDATE;
+    } else if (firstWord === "delete") {
+      type = QueryTypes.DELETE;
+    }
+
+    const [results, metadata] = await sequelize.query(sql, {
+      replacements,
+      type,
+      raw: true,
+    });
+
+    const duration = Date.now() - start;
+    let rowCount;
+
+    if (expectRows) {
+      const rows = results || [];
+      rowCount = rows.length;
+      console.log("Query ejecutada", { text: sql, duration, rows: rowCount });
+      return { rows, rowCount };
+    }
+
+    rowCount = typeof metadata === "number" ? metadata : (metadata?.rowCount || 0);
+    console.log("Query ejecutada", { text: sql, duration, rows: rowCount });
+    return { rows: [], rowCount };
+
+  } catch (error) {
+    console.error("Error ejecutando query", { text: sql, error: error.message });
+    throw error;
+  }
+};
+
 module.exports = {
   sequelize,
+  query,
   testConnection,
   syncModels,
 };
