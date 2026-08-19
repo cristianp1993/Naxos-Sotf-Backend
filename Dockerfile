@@ -12,8 +12,12 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
+# Dar permisos de ejecucion al entrypoint
+RUN chmod +x entrypoint.sh
+
 ENV PORT=3000
 ENV TZ=America/Bogota
 EXPOSE 3000
 
-CMD ["node", "src/index.js"]
+# Ejecuta migraciones y luego arranca el servidor
+CMD ["./entrypoint.sh"]

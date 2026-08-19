@@ -89,7 +89,8 @@ class InventoryController {
       console.error('Error obteniendo ubicaciones:', error);
       res.status(500).json({
         error: 'Error interno del servidor',
-        message: 'No se pudieron obtener las ubicaciones'
+        message: 'No se pudieron obtener las ubicaciones',
+        details: error.message
       });
     }
   }
@@ -295,7 +296,8 @@ class InventoryController {
       console.error('Error registrando movimiento:', error);
       res.status(500).json({
         error: 'Error interno del servidor',
-        message: 'No se pudo registrar el movimiento'
+        message: 'No se pudo registrar el movimiento',
+        details: error.message
       });
     }
   }
