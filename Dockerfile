@@ -3,7 +3,7 @@ WORKDIR /app
 
 # Instalar tzdata para soporte de zona horaria y configurar Colombia
 RUN apk add --no-cache libc6-compat python3 make g++ tzdata \
-  && corepack enable \
+  && npm install -g pnpm@10.33.2 \
   && cp /usr/share/zoneinfo/America/Bogota /etc/localtime \
   && echo "America/Bogota" > /etc/timezone
 

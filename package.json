@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Backend para Sistema POS Naxos - Gestión de ventas, inventario y cierre diario",
   "main": "src/index.js",
+  "packageManager": "pnpm@10.33.2",
   "scripts": {
     "dev": "nodemon src/index.js",
     "build": "echo 'No build required for backend'",
