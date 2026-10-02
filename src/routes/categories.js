@@ -1,8 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const CategoriesController = require('../controllers/categoriesController');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 // ==================== RUTAS DE CATEGORÍAS ====================
+
+// CP 2026-10-01 Todas las rutas requieren autenticación de admin
+router.use(authenticateToken, requireAdmin);
 
 // Crear categoría
 router.post('/', CategoriesController.createCategory);
